@@ -153,16 +153,38 @@ func (m *CallManager) AcceptCall(ctx context.Context, callID string) error {
 		acceptNode, err := signaling.BuildAcceptStanza(ctx, m.sock, callID, key, peer, creator, isVideo)
 		if err != nil {
 			m.log.Error("build accept failed", "err", err)
-		} else if _, err := m.sock.Query(ctx, acceptNode); err != nil {
-			m.log.Error("accept query error", "err", err)
+		} else if err := m.sock.SendNode(ctx, acceptNode); err != nil {
+			m.log.Error("accept send error", "err", err)
 		}
 	}
 
 	if relayData != nil {
+		m.setupIncomingMedia(call, relayData)
 		m.connectRelays(relayData.Endpoints)
+	} else {
+		m.log.Warn("call accepted but no relay endpoints yet; media path waits for a transport message", "call_id", callID)
 	}
 	m.log.Info("call accepted", "call_id", callID)
 	return nil
+}
+
+func (m *CallManager) setupIncomingMedia(call *CallInfo, relayData *core.RelayData) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(relayData.ParticipantJids) > 0 {
+		ourBase := wanode.CleanJID(m.ownCredJid())
+		ourDeviceJid := ensureDeviceJid(findOurDevice(relayData.ParticipantJids, ourBase, m.ownCredJid()))
+		if newSelf := media.GenerateSecureSsrc(call.CallID, ourDeviceJid, 0); newSelf != m.selfSsrc {
+			m.selfSsrc = newSelf
+			m.rtpSession = media.NewWhatsAppOpusSession(newSelf)
+		}
+		if peer := firstPeerDevice(relayData.ParticipantJids, ourBase); peer != "" {
+			m.peerSsrcs = []uint32{media.GenerateSecureSsrc(call.CallID, ensureDeviceJid(peer), 0)}
+			m.actualPeerSet = true
+		}
+	}
+	m.relay.SetSubscriptionSsrc(firstSsrc(m.peerSsrcs))
+	m.initSrtpKeysLocked()
 }
 
 func (m *CallManager) RejectCall(ctx context.Context, callID string, reason core.EndCallReason) error {

@@ -52,6 +52,28 @@ func firstSsrc(s []uint32) uint32 {
 	return 0
 }
 
+// childTagSummary renders a node's immediate children as "tag[subtag,subtag]"
+// for diagnostics — e.g. seeing whether an offer carries a structured
+// "relay[key,token,te2]" node or no relay node at all.
+func childTagSummary(n *waBinary.Node) string {
+	if n == nil {
+		return "<nil>"
+	}
+	var parts []string
+	for _, c := range wanode.NodeChildren(n) {
+		tag := c.Tag
+		if sub := wanode.NodeChildren(&c); len(sub) > 0 {
+			subtags := make([]string, 0, len(sub))
+			for _, s := range sub {
+				subtags = append(subtags, s.Tag)
+			}
+			tag += "[" + strings.Join(subtags, ",") + "]"
+		}
+		parts = append(parts, tag)
+	}
+	return strings.Join(parts, " ")
+}
+
 func relayEndpointCount(rd *core.RelayData) int {
 	if rd == nil {
 		return 0

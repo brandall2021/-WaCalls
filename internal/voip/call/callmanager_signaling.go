@@ -28,6 +28,21 @@ func (m *CallManager) HandleCallOffer(ctx context.Context, node *waBinary.Node, 
 		m.log.Error("offer decrypt call key", "err", err)
 	}
 	relays := signaling.ExtractRelayEndpoints(info.InnerNode)
+	var structured *signaling.ParsedRelayAck
+	if len(relays) == 0 {
+		// The offer may carry relays in the structured <relay><te2> form (the
+		// same encoding acks use) rather than as <relay ip=.. token=..>
+		// attributes. ExtractRelayEndpoints only reads the attribute form, so
+		// fall back to the structured parser before giving up.
+		if parsed := signaling.ParseRelayFromAck(info.InnerNode); len(parsed.Relays) > 0 {
+			relays = parsed.Relays
+			structured = &parsed
+			m.log.Info("offer relays parsed via structured (te2) format", "call_id", callID, "relays", len(relays))
+		}
+	}
+	// Diagnostic: show the offer's child structure so we can see whether relays
+	// are present (and in which form) or genuinely arrive later.
+	m.log.Debug("offer inner node structure", "call_id", callID, "children", childTagSummary(info.InnerNode))
 
 	mediaType := core.CallMediaTypeAudio
 	if isVideo {
@@ -40,7 +55,16 @@ func (m *CallManager) HandleCallOffer(ctx context.Context, node *waBinary.Node, 
 		call.EncryptionKey = callKey
 	}
 	if len(relays) > 0 {
-		call.RelayData = &core.RelayData{Endpoints: relays}
+		rd := &core.RelayData{Endpoints: relays}
+		if structured != nil {
+			// Carry the full structured data so SRTP/SSRC setup has participants.
+			rd.ParticipantJids = structured.ParticipantJids
+			rd.UUID = structured.UUID
+			rd.SelfPid = structured.SelfPid
+			rd.PeerPid = structured.PeerPid
+			rd.HbhKey = structured.HbhKey
+		}
+		call.RelayData = rd
 	}
 	m.currentCall = call
 	m.initialTransportSent = false
@@ -160,6 +184,8 @@ func (m *CallManager) HandleCallTransport(ctx context.Context, node *waBinary.No
 		return
 	}
 	relays := signaling.ExtractRelayEndpoints(info.InnerNode)
+	m.log.Info("call transport received", "call_id", call.CallID,
+		"relays", len(relays), "already_connected", m.relay.HasConnection())
 	if len(relays) > 0 && !m.relay.HasConnection() {
 		m.mu.Lock()
 		if call.RelayData == nil {
