@@ -28,7 +28,6 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{sid}/history", s.handleHistory)
 
 	mux.HandleFunc("GET /api/events", s.handleEvents)
-	mux.HandleFunc("POST /api/debug", s.handleDebug)
 
 	if s.staticDir != "" {
 		if _, err := os.Stat(s.staticDir); err == nil {
@@ -71,16 +70,6 @@ func (s *server) sessionByID(w http.ResponseWriter, sid string) *Session {
 		return nil
 	}
 	return sess
-}
-
-func (s *server) handleDebug(w http.ResponseWriter, r *http.Request) {
-	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	s.log.Info("browser debug", "data", body)
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) handleEvents(w http.ResponseWriter, r *http.Request) {
