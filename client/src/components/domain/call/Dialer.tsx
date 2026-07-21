@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { DeviceSelector } from "@/components/form/DeviceSelector";
 import { useStartCall } from "@/hooks/useStartCall";
 import { useDevices } from "@/stores/devices";
+import { useI18n } from "@/lib/i18n";
 
 export const Dialer = ({ sid }: { sid: string }) => {
   const [phone, setPhone] = useState("");
   const [record, setRecord] = useState(false);
   const micId = useDevices((s) => s.micId);
   const startCall = useStartCall(sid, micId);
+  const t = useI18n((s) => s.t);
 
   const submit = () => {
     if (!phone.trim() || startCall.isPending) return;
@@ -21,7 +23,7 @@ export const Dialer = ({ sid }: { sid: string }) => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Dialer</CardTitle>
+        <CardTitle>{t("dialer")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <DeviceSelector />
@@ -44,11 +46,11 @@ export const Dialer = ({ sid }: { sid: string }) => {
             aria-pressed={record}
           >
             <Disc3 className="h-4 w-4" />
-            Record
+            {t("record")}
           </Button>
           <Button onClick={submit} disabled={startCall.isPending || !phone.trim()}>
             <Phone className="h-4 w-4" />
-            {startCall.isPending ? "Calling…" : "Call"}
+            {startCall.isPending ? t("calling") : t("call")}
           </Button>
         </div>
       </CardContent>

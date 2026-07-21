@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { PhoneOff } from "lucide-react";
+import { PhoneOff, Signal, SignalHigh, SignalLow, SignalMedium } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { attachMeter } from "@/lib/audio-meter";
+import { sounds } from "@/lib/sounds";
 import { useCalls } from "@/stores/calls";
 import { useDevices } from "@/stores/devices";
 import { useEndCall } from "@/hooks/useEndCall";
+import { useCallQuality } from "@/hooks/useCallQuality";
+import { useI18n } from "@/lib/i18n";
 import { formatCallDuration } from "@/utils/format";
 import type { CallStatus, CallSummary } from "@/types/call";
 
@@ -30,10 +33,19 @@ const Meter = ({ label, db }: { label: string; db: number }) => {
   );
 };
 
+const QualityBadge = ({ label, value, unit }: { label: string; value: number | null; unit: string }) => (
+  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <span className="font-medium">{label}:</span>
+    <span>{value !== null ? `${value}${unit}` : "—"}</span>
+  </div>
+);
+
 export const CallCard = ({ call }: { call: CallSummary }) => {
   const conn = useCalls((s) => s.ownConnections.get(call.callId));
   const outDeviceId = useDevices((s) => s.outId);
   const endCall = useEndCall();
+  const quality = useCallQuality(conn);
+  const t = useI18n((s) => s.t);
   const [, force] = useState(0);
   const [micDb, setMicDb] = useState(-60);
   const [peerDb, setPeerDb] = useState(-60);
@@ -69,6 +81,8 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
     el.setSinkId(outDeviceId).catch(() => {});
   }, [outDeviceId, conn]);
 
+  const QualityIcon = quality.rtt === null ? Signal : quality.rtt < 150 ? SignalHigh : quality.rtt < 300 ? SignalMedium : SignalLow;
+
   return (
     <Card>
       <CardContent className="space-y-3 p-4">
@@ -84,17 +98,31 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
               <Button
                 variant="destructive"
                 size="icon"
-                onClick={() => endCall.mutate({ sid: call.sessionId, callId: call.callId })}
-                aria-label="End call"
+                onClick={() => {
+                  sounds.disconnect();
+                  endCall.mutate({ sid: call.sessionId, callId: call.callId });
+                }}
+                aria-label={t("end_call")}
               >
                 <PhoneOff className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>End call</TooltipContent>
+            <TooltipContent>{t("end_call")}</TooltipContent>
           </Tooltip>
         </div>
         <Meter label="Mic" db={micDb} />
         <Meter label="Peer" db={peerDb} />
+        {call.status === "connected" && (
+          <div className="flex items-center gap-3 rounded-lg bg-muted/50 px-3 py-2">
+            <QualityIcon className="h-4 w-4 text-muted-foreground" />
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+              <QualityBadge label={t("latency")} value={quality.rtt} unit="ms" />
+              <QualityBadge label={t("jitter")} value={quality.jitter} unit="ms" />
+              <QualityBadge label={t("packet_loss")} value={quality.packetLoss} unit="%" />
+              <QualityBadge label={t("bitrate")} value={quality.bitrate} unit="kbps" />
+            </div>
+          </div>
+        )}
         <audio ref={audioRef} autoPlay />
       </CardContent>
     </Card>

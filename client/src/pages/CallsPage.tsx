@@ -6,9 +6,11 @@ import { OtherCallsList } from "@/components/domain/call/OtherCallsList";
 import { HistoryDrawer } from "@/components/domain/history/HistoryDrawer";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { isMine, useCalls } from "@/stores/calls";
+import { useI18n } from "@/lib/i18n";
 
 export const CallsPage = ({ sid }: { sid: string }) => {
   const calls = useCalls((s) => s.calls);
+  const t = useI18n((s) => s.t);
   const [, force] = useState(0);
 
   useEffect(() => {
@@ -24,7 +26,7 @@ export const CallsPage = ({ sid }: { sid: string }) => {
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-muted-foreground">
-          {mine.length} active call{mine.length === 1 ? "" : "s"}
+          {t("active_calls", { n: mine.length })}
         </h2>
         <HistoryDrawer sid={sid} />
       </div>
@@ -38,8 +40,8 @@ export const CallsPage = ({ sid }: { sid: string }) => {
       ) : (
         <EmptyState
           icon={<PhoneCall className="h-6 w-6" />}
-          title="No active calls"
-          description="Dial a number above to start a call."
+          title={t("no_active_calls")}
+          description={t("no_active_calls_desc")}
         />
       )}
       <OtherCallsList calls={others} />
