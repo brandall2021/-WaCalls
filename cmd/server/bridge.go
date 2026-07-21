@@ -27,18 +27,36 @@ type Bridge struct {
 	OnTerminalICE func()
 }
 
+var browserSTUN = []webrtc.ICEServer{
+	{URLs: []string{"stun:stun.l.google.com:19302"}},
+	{URLs: []string{"stun:stun1.l.google.com:19302"}},
+	{URLs: []string{"stun:stun2.l.google.com:19302"}},
+}
+
 func NewBridge(offerSDP string, log *slog.Logger) (*Bridge, string, error) {
-	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	log.Info("NewBridge: creating browser PeerConnection with STUN servers")
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
+		ICEServers: browserSTUN,
+	})
 	if err != nil {
+		log.Error("NewBridge: failed to create PeerConnection", "err", err)
 		return nil, "", err
 	}
 	br := &Bridge{pc: pc, log: log}
 
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		if dc.Label() != pcmChannelLabel {
+			log.Info("NewBridge: ignoring non-PCM data channel", "label", dc.Label())
 			return
 		}
+		log.Info("NewBridge: PCM data channel received from browser")
 		br.dc.Store(dc)
+		dc.OnOpen(func() {
+			log.Info("NewBridge: PCM data channel OPEN")
+		})
+		dc.OnClose(func() {
+			log.Info("NewBridge: PCM data channel CLOSED")
+		})
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			if cb := br.OnBrowserPCM; cb != nil && len(msg.Data) > 0 {
 				cb(media.PCMInt16LEToFloat32(msg.Data))
@@ -47,12 +65,22 @@ func NewBridge(offerSDP string, log *slog.Logger) (*Bridge, string, error) {
 	})
 
 	pc.OnICEConnectionStateChange(func(s webrtc.ICEConnectionState) {
-		log.Debug("browser ice state", "state", s.String())
+		log.Info("browser ICE state", "state", s.String())
 		if s == webrtc.ICEConnectionStateFailed || s == webrtc.ICEConnectionStateClosed {
 			if br.OnTerminalICE != nil {
 				br.OnTerminalICE()
 			}
 		}
+	})
+
+	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c != nil {
+			log.Info("browser ICE candidate", "candidate", c.String())
+		}
+	})
+
+	pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+		log.Info("browser PeerConnection state", "state", s.String())
 	})
 
 	if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offerSDP}); err != nil {

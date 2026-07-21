@@ -28,6 +28,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/sessions/{sid}/history", s.handleHistory)
 
 	mux.HandleFunc("GET /api/events", s.handleEvents)
+	mux.HandleFunc("POST /api/debug", s.handleDebug)
 
 	if s.staticDir != "" {
 		if _, err := os.Stat(s.staticDir); err == nil {
@@ -70,6 +71,16 @@ func (s *server) sessionByID(w http.ResponseWriter, sid string) *Session {
 		return nil
 	}
 	return sess
+}
+
+func (s *server) handleDebug(w http.ResponseWriter, r *http.Request) {
+	var body map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	s.log.Info("browser debug", "data", body)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -196,8 +207,10 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 
 func (s *server) doWebRTC(sess *Session, w http.ResponseWriter, r *http.Request) {
 	callID := r.PathValue("id")
+	s.log.Info("doWebRTC called", "session", sess.id, "call_id", callID)
 	ac, ok := sess.reg.get(callID)
 	if !ok {
+		s.log.Warn("doWebRTC: call not found", "call_id", callID)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such call"})
 		return
 	}
@@ -210,6 +223,7 @@ func (s *server) doWebRTC(sess *Session, w http.ResponseWriter, r *http.Request)
 	}
 	bridge, answer, err := NewBridge(body.SDPOffer, s.log)
 	if err != nil {
+		s.log.Error("doWebRTC: bridge creation failed", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -221,6 +235,7 @@ func (s *server) doWebRTC(sess *Session, w http.ResponseWriter, r *http.Request)
 		go sess.terminateCall(callID, core.EndCallReasonUserEnded)
 	}
 	sess.setBridge(callID, bridge)
+	s.log.Info("doWebRTC: bridge created successfully", "call_id", callID)
 	writeJSON(w, http.StatusOK, map[string]string{"sdp_answer": answer})
 }
 
