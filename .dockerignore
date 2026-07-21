@@ -1,0 +1,10 @@
+.git
+.github
+client/node_modules
+client/.vite
+client/dist
+*.db
+*.db-wal
+*.db-shm
+LICENSE
+README.md

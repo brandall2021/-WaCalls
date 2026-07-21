@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  wacalls:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - wacalls-data:/data
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+
+volumes:
+  wacalls-data:
