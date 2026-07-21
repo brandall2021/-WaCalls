@@ -2,10 +2,18 @@ import { useState, type ReactNode } from "react";
 import { Menu, PhoneCall } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, type PageId } from "./Sidebar";
 import { ThemeToggle } from "./ThemeToggle";
 
-export const AppShell = ({ children }: { children: ReactNode }) => {
+export const AppShell = ({
+  children,
+  page,
+  onSetPage,
+}: {
+  children: ReactNode;
+  page: PageId;
+  onSetPage: (p: PageId) => void;
+}) => {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -14,13 +22,17 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
         <div className="flex items-center gap-2">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
-              <Button variant="outline" size="icon" className="md:hidden" aria-label="Accounts">
+              <Button variant="outline" size="icon" className="md:hidden" aria-label="Menu">
                 <Menu className="h-4 w-4" />
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-72 p-0">
-              <SheetTitle className="px-3 pt-3">Accounts</SheetTitle>
-              <Sidebar onNavigate={() => setMobileOpen(false)} />
+              <SheetTitle className="px-3 pt-3">WaCalls</SheetTitle>
+              <Sidebar
+                onNavigate={() => setMobileOpen(false)}
+                activePage={page}
+                onSetPage={onSetPage}
+              />
             </SheetContent>
           </Sheet>
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -32,7 +44,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
       </header>
       <div className="flex flex-1">
         <aside className="hidden w-64 shrink-0 border-r md:block">
-          <Sidebar />
+          <Sidebar activePage={page} onSetPage={onSetPage} />
         </aside>
         <main className="flex-1 px-4 py-6 sm:px-6">{children}</main>
       </div>

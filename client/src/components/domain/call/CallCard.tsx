@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { PhoneOff, Signal, SignalHigh, SignalLow, SignalMedium } from "lucide-react";
+import { PhoneOff, Signal, SignalHigh, SignalLow, SignalMedium, Mic, MicOff, StickyNote } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,8 +8,10 @@ import { attachMeter } from "@/lib/audio-meter";
 import { sounds } from "@/lib/sounds";
 import { useCalls } from "@/stores/calls";
 import { useDevices } from "@/stores/devices";
+import { useNotes } from "@/stores/callNotes";
 import { useEndCall } from "@/hooks/useEndCall";
 import { useCallQuality } from "@/hooks/useCallQuality";
+import { useRecording } from "@/hooks/useRecording";
 import { useI18n } from "@/lib/i18n";
 import { formatCallDuration } from "@/utils/format";
 import type { CallStatus, CallSummary } from "@/types/call";
@@ -40,15 +42,21 @@ const QualityBadge = ({ label, value, unit }: { label: string; value: number | n
   </div>
 );
 
+const formatRecordingDuration = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
 export const CallCard = ({ call }: { call: CallSummary }) => {
   const conn = useCalls((s) => s.ownConnections.get(call.callId));
   const outDeviceId = useDevices((s) => s.outId);
   const endCall = useEndCall();
   const quality = useCallQuality(conn);
+  const recording = useRecording();
+  const notes = useNotes((s) => s);
   const t = useI18n((s) => s.t);
   const [, force] = useState(0);
   const [micDb, setMicDb] = useState(-60);
   const [peerDb, setPeerDb] = useState(-60);
+  const [showNotes, setShowNotes] = useState(false);
+  const [noteText, setNoteText] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -81,6 +89,36 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
     el.setSinkId(outDeviceId).catch(() => {});
   }, [outDeviceId, conn]);
 
+  useEffect(() => {
+    if (call.status === "ended" && recording.state === "recording") {
+      recording.stop();
+    }
+  }, [call.status]);
+
+  const existingNote = notes.getByCall(call.callId);
+
+  const toggleRecording = () => {
+    if (!conn) return;
+    const streams: MediaStream[] = [conn.micStream];
+    if (conn.remoteStream) streams.push(conn.remoteStream);
+    recording.toggle(streams);
+  };
+
+  const saveNote = () => {
+    if (!noteText.trim()) return;
+    notes.add({
+      callId: call.callId,
+      contactName: call.peer,
+      phone: "",
+      duration: Math.floor((Date.now() - call.startedAt) / 1000),
+      rating: 0,
+      notes: noteText.trim(),
+      tags: [],
+    });
+    setShowNotes(false);
+    setNoteText("");
+  };
+
   const QualityIcon = quality.rtt === null ? Signal : quality.rtt < 150 ? SignalHigh : quality.rtt < 300 ? SignalMedium : SignalLow;
 
   return (
@@ -93,25 +131,68 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
               {formatCallDuration(call.startedAt, call.status)}
             </Badge>
           </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="destructive"
-                size="icon"
-                onClick={() => {
-                  sounds.disconnect();
-                  endCall.mutate({ sid: call.sessionId, callId: call.callId });
-                }}
-                aria-label={t("end_call")}
-              >
-                <PhoneOff className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t("end_call")}</TooltipContent>
-          </Tooltip>
+          <div className="flex items-center gap-1">
+            {call.status === "connected" && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={recording.state === "recording" ? "destructive" : "outline"}
+                    size="icon"
+                    className="h-9 w-9"
+                    onClick={toggleRecording}
+                    aria-label={t("record")}
+                  >
+                    {recording.state === "recording" ? (
+                      <>
+                        <MicOff className="h-4 w-4" />
+                        <span className="ml-1 text-xs">{formatRecordingDuration(recording.duration)}</span>
+                      </>
+                    ) : (
+                      <Mic className="h-4 w-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {recording.state === "recording" ? t("stop_recording") : t("record")}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={showNotes ? "secondary" : "outline"}
+                  size="icon"
+                  className="h-9 w-9"
+                  onClick={() => setShowNotes(!showNotes)}
+                  aria-label={t("notes")}
+                >
+                  <StickyNote className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("notes")}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  onClick={() => {
+                    sounds.disconnect();
+                    endCall.mutate({ sid: call.sessionId, callId: call.callId });
+                  }}
+                  aria-label={t("end_call")}
+                >
+                  <PhoneOff className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("end_call")}</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
+
         <Meter label="Mic" db={micDb} />
         <Meter label="Peer" db={peerDb} />
+
         {call.status === "connected" && (
           <div className="flex items-center gap-3 rounded-lg bg-muted/50 px-3 py-2">
             <QualityIcon className="h-4 w-4 text-muted-foreground" />
@@ -123,6 +204,25 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
             </div>
           </div>
         )}
+
+        {showNotes && (
+          <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+            {existingNote && (
+              <p className="text-xs text-muted-foreground">{existingNote.notes}</p>
+            )}
+            <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder={t("add_note")}
+              rows={2}
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+            />
+            <Button size="sm" onClick={saveNote} disabled={!noteText.trim()}>
+              {t("save")}
+            </Button>
+          </div>
+        )}
+
         <audio ref={audioRef} autoPlay />
       </CardContent>
     </Card>
