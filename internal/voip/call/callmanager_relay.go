@@ -91,6 +91,11 @@ func (m *CallManager) cleanupMedia() {
 	m.actualPeerSet = false
 	m.encodeBuf = nil
 	m.encodeBufPos = 0
+	m.pendingPCM = nil
+	m.log.Info("media cleaned up", "pcm_recv", m.totalPCMRecv, "frames_sent", m.totalFramesSent, "relay_recv", m.totalRelayRecv)
+	m.totalPCMRecv = 0
+	m.totalFramesSent = 0
+	m.totalRelayRecv = 0
 	m.mu.Unlock()
 
 	m.relay.Cleanup()

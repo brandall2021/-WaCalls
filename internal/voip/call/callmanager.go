@@ -38,9 +38,14 @@ type CallManager struct {
 
 	encodeBuf    []float32
 	encodeBufPos int
+	pendingPCM   []float32
 
 	lastCaptureAt time.Time
 	keepaliveStop chan struct{}
+
+	totalPCMRecv  int
+	totalFramesSent int
+	totalRelayRecv  int
 
 	OnStateChange func(*CallInfo)
 	OnIncoming    func(*CallInfo)

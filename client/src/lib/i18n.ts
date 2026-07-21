@@ -43,6 +43,10 @@ type TranslationKeys = {
   jitter: string;
   packet_loss: string;
   bitrate: string;
+  audio_flow: string;
+  no_audio_flow: string;
+  peer_audio_flow: string;
+  no_peer_audio: string;
   // History
   history: string;
   call_history: string;
@@ -128,6 +132,10 @@ const translations: Record<Locale, TranslationKeys> = {
     jitter: "Jitter",
     packet_loss: "Packet loss",
     bitrate: "Bitrate",
+    audio_flow: "Mic OK",
+    no_audio_flow: "No mic",
+    peer_audio_flow: "Peer OK",
+    no_peer_audio: "No peer audio",
     history: "History",
     call_history: "Call history",
     no_history: "No calls yet",
@@ -206,6 +214,10 @@ const translations: Record<Locale, TranslationKeys> = {
     jitter: "Jitter",
     packet_loss: "Pérdida de paquetes",
     bitrate: "Bitrate",
+    audio_flow: "Mic OK",
+    no_audio_flow: "Sin mic",
+    peer_audio_flow: "Par OK",
+    no_peer_audio: "Sin audio par",
     history: "Historial",
     call_history: "Historial de llamadas",
     no_history: "Sin llamadas aún",
@@ -284,6 +296,10 @@ const translations: Record<Locale, TranslationKeys> = {
     jitter: "Jitter",
     packet_loss: "Perda de pacotes",
     bitrate: "Bitrate",
+    audio_flow: "Mic OK",
+    no_audio_flow: "Sem mic",
+    peer_audio_flow: "Par OK",
+    no_peer_audio: "Sem áudio par",
     history: "Histórico",
     call_history: "Histórico de chamadas",
     no_history: "Nenhuma chamada ainda",

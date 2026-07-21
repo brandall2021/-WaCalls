@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { PhoneOff, Signal, SignalHigh, SignalLow, SignalMedium, Mic, MicOff, StickyNote } from "lucide-react";
+import { PhoneOff, Signal, SignalHigh, SignalLow, SignalMedium, Mic, MicOff, StickyNote, Volume2, VolumeX } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -194,15 +194,41 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
         <Meter label="Peer" db={peerDb} />
 
         {call.status === "connected" && (
-          <div className="flex items-center gap-3 rounded-lg bg-muted/50 px-3 py-2">
-            <QualityIcon className="h-4 w-4 text-muted-foreground" />
-            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-              <QualityBadge label={t("latency")} value={quality.rtt} unit="ms" />
-              <QualityBadge label={t("jitter")} value={quality.jitter} unit="ms" />
-              <QualityBadge label={t("packet_loss")} value={quality.packetLoss} unit="%" />
-              <QualityBadge label={t("bitrate")} value={quality.bitrate} unit="kbps" />
+          <>
+            <div className="flex items-center gap-3 rounded-lg bg-muted/50 px-3 py-2">
+              <QualityIcon className="h-4 w-4 text-muted-foreground" />
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                <QualityBadge label={t("latency")} value={quality.rtt} unit="ms" />
+                <QualityBadge label={t("jitter")} value={quality.jitter} unit="ms" />
+                <QualityBadge label={t("packet_loss")} value={quality.packetLoss} unit="%" />
+                <QualityBadge label={t("bitrate")} value={quality.bitrate} unit="kbps" />
+              </div>
             </div>
-          </div>
+            <div className="flex items-center gap-2 text-xs">
+              {micDb > -50 ? (
+                <>
+                  <Volume2 className="h-3.5 w-3.5 text-green-500" />
+                  <span className="text-green-500 font-medium">{t("audio_flow")}</span>
+                </>
+              ) : (
+                <>
+                  <VolumeX className="h-3.5 w-3.5 text-amber-500" />
+                  <span className="text-amber-500">{t("no_audio_flow")}</span>
+                </>
+              )}
+              {peerDb > -50 ? (
+                <>
+                  <Volume2 className="ml-2 h-3.5 w-3.5 text-green-500" />
+                  <span className="text-green-500 font-medium">{t("peer_audio_flow")}</span>
+                </>
+              ) : (
+                <>
+                  <VolumeX className="ml-2 h-3.5 w-3.5 text-amber-500" />
+                  <span className="text-amber-500">{t("no_peer_audio")}</span>
+                </>
+              )}
+            </div>
+          </>
         )}
 
         {showNotes && (

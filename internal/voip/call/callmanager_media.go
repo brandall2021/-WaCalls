@@ -17,15 +17,60 @@ func (m *CallManager) initCodec() {
 		return
 	}
 	m.codec = codec
+	m.log.Info("MLow codec initialized", "frame_size", codec.FrameSize(), "sample_rate", codec.SampleRate())
 }
 
 func (m *CallManager) FeedCapturedPCM(data []float32) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.codec == nil || m.rtpSession == nil || m.srtpSession == nil || !m.relay.HasConnection() {
+	m.totalPCMRecv += len(data)
+
+	if m.codec == nil {
+		m.log.Debug("FeedCapturedPCM: codec nil, dropping", "samples", len(data))
 		return
 	}
+	if m.rtpSession == nil {
+		m.log.Debug("FeedCapturedPCM: rtpSession nil, dropping", "samples", len(data))
+		return
+	}
+	if m.srtpSession == nil {
+		// Buffer audio while SRTP keys are being derived
+		if m.pendingPCM == nil {
+			m.pendingPCM = make([]float32, 0, 32000)
+		}
+		m.pendingPCM = append(m.pendingPCM, data...)
+		if len(m.pendingPCM) > 32000 {
+			m.pendingPCM = m.pendingPCM[len(m.pendingPCM)-32000:]
+		}
+		m.log.Debug("FeedCapturedPCM: srtpSession nil, buffering", "buffered", len(m.pendingPCM))
+		return
+	}
+	if !m.relay.HasConnection() {
+		// Buffer audio while relay connects (max 2 seconds @ 16kHz = 32000 samples)
+		if m.pendingPCM == nil {
+			m.pendingPCM = make([]float32, 0, 32000)
+		}
+		m.pendingPCM = append(m.pendingPCM, data...)
+		if len(m.pendingPCM) > 32000 {
+			m.pendingPCM = m.pendingPCM[len(m.pendingPCM)-32000:]
+		}
+		m.log.Debug("FeedCapturedPCM: relay not connected, buffering", "buffered", len(m.pendingPCM))
+		return
+	}
+
+	// Flush buffered audio from when relay was connecting
+	if len(m.pendingPCM) > 0 {
+		m.log.Info("FeedCapturedPCM: flushing buffered audio", "samples", len(m.pendingPCM))
+		buf := m.pendingPCM
+		m.pendingPCM = nil
+		m.feedPCMInternal(buf)
+	}
+
+	m.feedPCMInternal(data)
+}
+
+func (m *CallManager) feedPCMInternal(data []float32) {
 	m.lastCaptureAt = time.Now()
 	frameSize := m.codec.FrameSize()
 	if m.encodeBuf == nil {
@@ -67,6 +112,11 @@ func (m *CallManager) sendOpusFrameLocked(opus []byte) {
 		pkt.Header.ExtensionData = nil
 	}
 	m.firstPacketSent = true
+	m.totalFramesSent++
+
+	if m.totalFramesSent%100 == 1 {
+		m.log.Info("audio frame sent", "frames", m.totalFramesSent, "pcm_recv", m.totalPCMRecv)
+	}
 
 	srtp, err := m.srtpSession.Protect(pkt)
 	if err != nil {
@@ -122,6 +172,7 @@ func (m *CallManager) onRelayData(data []byte) {
 	}
 
 	m.mu.Lock()
+	m.totalRelayRecv++
 	if m.srtpSession == nil || m.codec == nil {
 		m.mu.Unlock()
 		return

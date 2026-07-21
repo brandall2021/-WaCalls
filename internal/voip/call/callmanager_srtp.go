@@ -41,7 +41,7 @@ func (m *CallManager) initSrtpKeysLocked() {
 		return
 	}
 	m.srtpSession = sess
-	m.log.Debug("srtp per-jid keys set", "send", ourDeviceJid, "recv", peerDeviceJid)
+	m.log.Info("srtp session initialized", "send_key", ourDeviceJid, "recv_key", peerDeviceJid)
 }
 
 func (m *CallManager) reinitSrtpLocked(peerKey []byte, peerJid types.JID) {
