@@ -96,6 +96,13 @@ enrutadas independientemente por ID de llamada.
 - Bitrate en kbps
 - Indicador visual de calidad (señal alta/media/baja)
 
+### 🔍 Diagnóstico de audio
+- Indicadores visuales en la tarjeta de llamada: **Mic OK** / **Sin mic** y **Par OK** / **Sin audio par**
+- Buffer de PCM mientras el relay o SRTP se conectan (máx. 2 segundos)
+- Logs detallados en el servidor: codec, rtpSession, srtpStatus, relay, frames enviados
+- Contadores de diagnóstico: `totalPCMRecv`, `totalFramesSent`, `totalRelayRecv`
+- Flush automático del buffer cuando el relay se conecta
+
 ---
 
 ## Arquitectura
@@ -297,6 +304,27 @@ La API **no tiene autenticación** — cualquiera con acceso HTTP puede crear cu
 hacer llamadas y leer el historial. **Ejecutala solo en una red local de confianza.**
 `wacalls.db` contiene credenciales de sesión de WhatsApp (secretos): **no lo subas a
 un repositorio** y mantenlo protegido.
+
+---
+
+## Solución de problemas de audio
+
+Si el otro teléfono no escucha audio, revisá los logs del servidor con `-debug`:
+
+| Mensaje de log | Significado | Solución |
+|---|---|---|
+| `codec nil` | El códec MLow no se inicializó | Verificar que `internal/voip/media/mlow/` esté compilado |
+| `srtpSession nil, buffering` | Las claves SRTP no se derivaron | Revisar que la llamada tenga `EncryptionKey` y `ParticipantJids` |
+| `relay not connected, buffering` | El relay de WhatsApp no conectó | Verificar conectividad de red (ICE/DTLS a puertos 3478) |
+| `srtp protect error` | Error al encriptar el paquete | Las claves SRTP no coinciden con el peer |
+| `audio frame sent` | Audio fluyendo correctamente | Todo funciona, revisar del lado del peer |
+| `flushing buffered audio` | Buffer liberado tras conectar relay | Funcionando, el delay inicial es normal |
+
+En el navegador, los indicadores muestran:
+- **Mic OK** (verde) = el micrófono está capturando audio
+- **Sin mic** (amarillo) = el navegador no tiene permiso de micrófono o no hay dispositivo
+- **Par OK** (verde) = se está recibiendo audio del interlocutor
+- **Sin audio par** (amarillo) = no se recibe audio del relay
 
 ---
 
