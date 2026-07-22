@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -361,11 +362,14 @@ func (s *server) doAccept(sess *Session, w http.ResponseWriter, r *http.Request)
 func (s *server) doReject(sess *Session, w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	s.log.Info("doReject called", "session", sess.id, "call_id", id)
-	if ac, ok := sess.reg.get(id); ok {
-		_ = ac.cm.RejectCall(r.Context(), id, core.EndCallReasonDeclined)
-	}
+	ac, ok := sess.reg.get(id)
 	sess.removeCall(id)
 	s.broker.endCall(id, string(core.EndCallReasonDeclined))
+	if ok {
+		go func() {
+			_ = ac.cm.RejectCall(context.Background(), id, core.EndCallReasonDeclined)
+		}()
+	}
 	s.log.Info("doReject: call rejected", "call_id", id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -373,14 +377,21 @@ func (s *server) doReject(sess *Session, w http.ResponseWriter, r *http.Request)
 func (s *server) doEndCall(sess *Session, w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	s.log.Info("doEndCall called", "session", sess.id, "call_id", id)
-	if ac, ok := sess.reg.get(id); ok {
-		s.log.Info("doEndCall: ending call via CallManager", "call_id", id)
-		_ = ac.cm.EndCall(r.Context(), core.EndCallReasonUserEnded)
-	} else {
-		s.log.Warn("doEndCall: call not found in registry, cleaning broker only", "call_id", id)
+
+	ac, ok := sess.reg.get(id)
+	if !ok {
+		s.log.Warn("doEndCall: call not found in registry", "call_id", id)
 	}
+
 	sess.removeCall(id)
 	s.broker.endCall(id, string(core.EndCallReasonUserEnded))
+
+	if ok {
+		go func() {
+			_ = ac.cm.EndCall(context.Background(), core.EndCallReasonUserEnded)
+		}()
+	}
+
 	s.log.Info("doEndCall: cleanup done", "call_id", id)
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -333,8 +333,13 @@ func (m *SctpRelayManager) startKeepalive(conn *relayConnection) {
 	}()
 }
 
+const relaySendBufferMax = 128 * 1024
+
 func (m *SctpRelayManager) sendRaw(conn *relayConnection, data []byte) {
 	if conn.channel == nil || conn.state != relayStateOpen {
+		return
+	}
+	if conn.channel.BufferedAmount() > relaySendBufferMax {
 		return
 	}
 	if err := conn.channel.Send(data); err != nil {

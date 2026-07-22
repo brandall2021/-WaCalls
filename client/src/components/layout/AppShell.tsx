@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from "react";
-import { Menu, PhoneCall } from "lucide-react";
+import { LogOut, Menu, PhoneCall } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar, type PageId } from "./Sidebar";
 import { ThemeToggle } from "./ThemeToggle";
+import { useAuth } from "@/stores/auth";
 
 export const AppShell = ({
   children,
@@ -40,7 +41,18 @@ export const AppShell = ({
           </span>
           <span className="text-lg font-semibold tracking-tight">WaCalls</span>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => useAuth.getState().logout()}
+            aria-label="Logout"
+            title="Logout"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        </div>
       </header>
       <div className="flex flex-1">
         <aside className="hidden w-64 shrink-0 border-r md:block">
