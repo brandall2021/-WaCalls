@@ -390,13 +390,14 @@ func (s *server) doEndCall(sess *Session, w http.ResponseWriter, r *http.Request
 
 	w.WriteHeader(http.StatusNoContent)
 
-	if ok {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		defer cancel()
-		_ = ac.cm.EndCall(ctx, core.EndCallReasonUserEnded)
-	}
-
-	s.log.Info("doEndCall: cleanup done", "call_id", id)
+	go func() {
+		if ok {
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			_ = ac.cm.EndCall(ctx, core.EndCallReasonUserEnded)
+		}
+		s.log.Info("doEndCall: cleanup done", "call_id", id)
+	}()
 }
 
 func normalizePhone(p string) string {

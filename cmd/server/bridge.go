@@ -3,6 +3,7 @@ package main
 import (
 	"log/slog"
 	"sync/atomic"
+	"time"
 
 	"wacalls/internal/voip/media"
 
@@ -117,6 +118,15 @@ func (b *Bridge) WritePCM(pcm []float32) error {
 
 func (b *Bridge) Close() {
 	if b.pc != nil {
-		_ = b.pc.Close()
+		done := make(chan struct{})
+		go func() {
+			_ = b.pc.Close()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			b.log.Warn("Bridge.Close: pc.Close timed out")
+		}
 	}
 }
