@@ -158,6 +158,9 @@ func (m *CallManager) startSilenceKeepaliveLocked() {
 
 func (m *CallManager) onRelayData(data []byte) {
 	if transport.IsStunPacket(data) {
+		if m.totalRelayRecv == 0 && m.totalFramesSent == 0 {
+			m.log.Info("onRelayData: STUN packet from relay", "len", len(data))
+		}
 		return
 	}
 	if !transport.IsRtpPacket(data) {

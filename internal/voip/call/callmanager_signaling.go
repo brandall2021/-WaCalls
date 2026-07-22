@@ -228,6 +228,10 @@ func (m *CallManager) HandleCallAck(ctx context.Context, node *waBinary.Node) {
 
 	ourBase := wanode.CleanJID(m.ownCredJid())
 	if len(parsed.ParticipantJids) > 0 {
+		oldSelfSsrc := m.selfSsrc
+		oldPeerSsrcs := make([]uint32, len(m.peerSsrcs))
+		copy(oldPeerSsrcs, m.peerSsrcs)
+
 		ourDeviceJid := ensureDeviceJid(findOurDevice(parsed.ParticipantJids, ourBase, m.ownCredJid()))
 		newSelf := media.GenerateSecureSsrc(call.CallID, ourDeviceJid, 0)
 		if newSelf != m.selfSsrc {
@@ -240,6 +244,14 @@ func (m *CallManager) HandleCallAck(ctx context.Context, node *waBinary.Node) {
 		if call.EncryptionKey != nil {
 			m.initSrtpKeysLocked()
 		}
+		m.log.Info("HandleCallAck: SSRCs recomputed from participants",
+			"old_self", oldSelfSsrc, "new_self", m.selfSsrc,
+			"old_peer", oldPeerSsrcs, "new_peer", m.peerSsrcs,
+			"participants", parsed.ParticipantJids,
+			"our_device", ourDeviceJid)
+	} else {
+		m.log.Warn("HandleCallAck: no participant JIDs in ack, using speculative SSRCs",
+			"self_ssrc", m.selfSsrc, "peer_ssrcs", m.peerSsrcs)
 	}
 	isInitiator := call.IsInitiator()
 	peer := wanode.MustJID(call.PeerJid)
@@ -250,12 +262,17 @@ func (m *CallManager) HandleCallAck(ctx context.Context, node *waBinary.Node) {
 		m.outgoingPreacceptSent = true
 	}
 	endpoints := parsed.Relays
+	alreadyConnected := m.relay.HasConnection()
 	m.mu.Unlock()
 
 	if sendPreaccept {
 		_ = m.sock.SendNode(ctx, signaling.BuildPreacceptStanza(peer, callID, creator))
 	}
 	m.connectRelays(endpoints)
+	if alreadyConnected {
+		m.relay.ResendSubscriptions()
+		m.log.Info("HandleCallAck: resent subscriptions after SSRC recomputation", "call_id", callID)
+	}
 }
 
 func (m *CallManager) HandleCallTerminate(node *waBinary.Node) {

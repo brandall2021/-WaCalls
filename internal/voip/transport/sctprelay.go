@@ -87,6 +87,8 @@ func (m *SctpRelayManager) ResendSubscriptions() {
 		conns = append(conns, c)
 	}
 	m.mu.Unlock()
+	m.log.Info("ResendSubscriptions: resending to open connections", "count", len(conns),
+		"audio_ssrc", m.audioSsrc, "subscription_ssrc", m.subscriptionSsrc)
 	for _, c := range conns {
 		if c.state == relayStateOpen && c.channel != nil {
 			m.sendStunRegistration(c)
@@ -292,6 +294,11 @@ func (m *SctpRelayManager) sendStunRegistration(conn *relayConnection) {
 			}
 			ssrcList := BuildSSRCSubscriptionList([]uint32{m.audioSsrc}, peerSsrcs, 0, 0)
 			m.sendRaw(conn, BuildAllocateForRelay(info.RawToken, ssrcList, hmacKey, info.IP, info.Port))
+			m.log.Info("sendStunRegistration: allocate+subscription sent", "id", conn.id,
+				"audio_ssrc", m.audioSsrc, "subscription_ssrc", m.subscriptionSsrc, "raw_token", len(info.RawToken))
+		} else {
+			m.log.Info("sendStunRegistration: STUN subscription sent (no raw token for allocate)", "id", conn.id,
+				"audio_ssrc", m.audioSsrc, "subscription_ssrc", m.subscriptionSsrc)
 		}
 	}
 
