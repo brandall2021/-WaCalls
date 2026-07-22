@@ -2,6 +2,7 @@ package main
 
 import (
 	"sync"
+	"time"
 
 	"wacalls/internal/voip/call"
 	"wacalls/internal/recording"
@@ -12,6 +13,8 @@ type activeCall struct {
 	bridge        *Bridge
 	recorder      *recording.Recorder
 	recordingPath string
+	recordingID   string
+	staleTimer    *time.Timer
 }
 
 type callRegistry struct {

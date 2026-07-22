@@ -39,6 +39,14 @@ func (s *recordingStore) Save(ctx context.Context, r *RecordingRow) error {
 	return err
 }
 
+func (s *recordingStore) Update(ctx context.Context, id string, duration, fileSize int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE recordings SET duration = $1, file_size = $2 WHERE id = $3`,
+		duration, fileSize, id,
+	)
+	return err
+}
+
 func (s *recordingStore) List(ctx context.Context, sessionID string) ([]RecordingRow, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, session_id, call_id, duration, file_path, file_size FROM recordings WHERE session_id = $1 ORDER BY id`,

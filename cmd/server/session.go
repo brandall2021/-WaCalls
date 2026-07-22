@@ -274,6 +274,9 @@ func (s *Session) removeCall(callID string) {
 	if !ok {
 		return
 	}
+	if ac.staleTimer != nil {
+		ac.staleTimer.Stop()
+	}
 	if ac.bridge != nil {
 		ac.bridge.Close()
 	}
@@ -340,13 +343,36 @@ func (s *Session) startRecording(callID, peer, direction string) {
 	}
 	ac.recorder = rec
 	ac.recordingPath = filePath
+	ac.recordingID = newSessionID()
+	ac.staleTimer = time.AfterFunc(60*time.Minute, func() {
+		if a, ok := s.reg.get(callID); ok && a.recorder != nil {
+			s.log.Warn("stale call detected, force ending", "call_id", callID)
+			s.stopRecording(callID)
+			s.removeCall(callID)
+			s.mgr.broker.endCall(callID, "stale_timeout")
+		}
+	})
 	s.log.Info("recording started", "call_id", callID, "file", filePath)
+
+	if s.mgr.recordingStore != nil {
+		_ = s.mgr.recordingStore.Save(context.Background(), &RecordingRow{
+			ID:        ac.recordingID,
+			SessionID: s.id,
+			CallID:    callID,
+			Duration:  0,
+			FilePath:  filePath,
+			FileSize:  0,
+		})
+	}
 }
 
 func (s *Session) stopRecording(callID string) {
 	ac, ok := s.reg.get(callID)
 	if !ok || ac.recorder == nil {
 		return
+	}
+	if ac.staleTimer != nil {
+		ac.staleTimer.Stop()
 	}
 	duration, size, err := ac.recorder.Stop()
 	if err != nil {
@@ -355,20 +381,13 @@ func (s *Session) stopRecording(callID string) {
 	}
 	s.log.Info("recording stopped", "call_id", callID, "duration", duration, "size", size)
 
-	if s.mgr.recordingStore != nil {
-		recID := newSessionID()
-		_ = s.mgr.recordingStore.Save(context.Background(), &RecordingRow{
-			ID:        recID,
-			SessionID: s.id,
-			CallID:    callID,
-			Duration:  duration.Milliseconds(),
-			FilePath:  ac.recordingPath,
-			FileSize:  size,
-		})
+	if s.mgr.recordingStore != nil && ac.recordingID != "" {
+		_ = s.mgr.recordingStore.Update(context.Background(), ac.recordingID, duration.Milliseconds(), size)
 		s.mgr.webhookDisp.Dispatch(s.id, WebhookEvent{
 			Type: "recording.ready", SessionID: s.id, Timestamp: time.Now().UnixMilli(),
-			Data: map[string]any{"recording_id": recID, "call_id": callID, "duration_ms": duration.Milliseconds(), "file_size": size},
+			Data: map[string]any{"recording_id": ac.recordingID, "call_id": callID, "duration_ms": duration.Milliseconds(), "file_size": size},
 		})
 	}
 	ac.recorder = nil
+	ac.recordingID = ""
 }
