@@ -39,69 +39,71 @@ enrutadas independientemente por ID de llamada.
 > **Estado:** estable. Llamadas salientes y entrantes 1:1 alcanzan `ACTIVE` con audio
 > bidireccional, y una sola cuenta puede mantener varias de ellas concurrentemente.
 > Las sesiones persisten en **PostgreSQL**. Autenticación JWT para acceso protegido.
+> **Grabación server-side** WAV 16 kHz mono con descarga HTTP.
+> **Webhooks** con firma HMAC-SHA256 y reintentos.
 
 ---
 
-## Funcionalidades nuevas
+## Funcionalidades
 
-### 🎙️ Grabación de llamadas
-- Botón de grabación en la tarjeta de llamada activa
-- Captura audio del micrófono local + audio remoto del interlocutor
-- Usa `MediaRecorder` del navegador (formato WebM/Opus)
-- Descarga automática del archivo de audio al finalizar la grabación
-- Indicador de duración en tiempo real durante la grabación
-- Se detiene automáticamente cuando la llamada termina
+### 🎙️ Grabación server-side
+- Grabación automática al inicio de cada llamada (both inbound y outbound)
+- WAV 16 kHz mono PCM, guardado en disco (`/data/recordings`)
+- Tap PCM en ambas direcciones: micrófono del navegador + audio del interlocutor
+- Tabla `recordings` en PostgreSQL con metadata (id, session_id, call_id, duration, file_path, file_size)
+- API: `GET /api/sessions/{sid}/recordings`, `GET /api/recordings/{id}/download`
+- Frontend: página Recordings con lista y descarga de archivos WAV
+
+### 🔔 Webhooks
+- Configuración de webhooks por sesión (URL, eventos, secret)
+- Firma HMAC-SHA256 en cada payload (`X-Webhook-Signature`)
+- Headers: `X-Webhook-Event`, `X-Webhook-ID`
+- Reintentos con backoff exponencial (hasta 5 intentos)
+- Eventos disponibles: `call.incoming`, `call.started`, `call.ended`, `recording.ready`
+- API CRUD: `GET/POST/DELETE /api/sessions/{sid}/webhooks`
+- Frontend: página Webhooks con crear/listar/eliminar/copy-secret
+
+### 📞 Llamadas VoIP
+- Llamadas salientes y entrantes 1:1 con audio bidireccional
+- WebRTC data channel para PCM 16 kHz
+- Códec MLow nativo en Go puro (sin cgo)
+- Buffer de audio durante conexión del relay
+- Métricas de calidad en tiempo real (latencia, jitter, packet loss, bitrate)
 
 ### 👥 Contactos
 - ABM completo de contactos (alta, baja, modificación)
 - Campos: nombre, teléfono, email, notas
 - Marcar contactos como favoritos con estrella
 - Búsqueda por nombre, teléfono o email
-- Ordenados por favoritos primero, luego por fecha de creación
 - Persistencia en localStorage
 
 ### 📅 Agenda de llamadas
 - Programar llamadas para fecha y hora específica
 - Selección de contacto de la agenda
 - Duración estimada en minutos
-- Notas asociadas a cada llamada programada
 - Estados: pendiente, completada, cancelada
-- Vista separada de próximas y pasadas
 - Persistencia en localStorage
 
 ### 📝 Notas por llamada
-- Agregar notas a cualquier llamada desde la tarjeta de llamada activa
-- Rating con estrellas (1-5) por llamada
-- Tags personalizados (separados por coma)
-- Texto libre de notas
-- Vista historial de todas las notas ordenadas por fecha
-- Edición y eliminación de notas existentes
+- Agregar notas a cualquier llamada
+- Rating con estrellas (1-5) y tags personalizados
+- Vista historial de todas las notas
 - Persistencia en localStorage
 
 ### 🌐 Multiidioma
 - Soporte completo para **Español (ES)**, **Portugués (PT)** e **Inglés (EN)**
-- Selector de idioma persistente con `localStorage`
-- Todas las funcionalidades traducidas incluidas las nuevas
 
 ### 🔊 Sonidos de llamada
-- Tono de llamada entrante (Web Audio API)
-- Tono de ocupado
-- Tono de desconexión
-- Sin archivos externos, generados programáticamente
+- Tono de llamada entrante, ocupado y desconexión (Web Audio API, sin archivos externos)
 
 ### 📊 Métricas de calidad
-- Latencia (RTT) en tiempo real
-- Jitter
-- Pérdida de paquetes
-- Bitrate en kbps
+- Latencia (RTT), jitter, pérdida de paquetes, bitrate
 - Indicador visual de calidad (señal alta/media/baja)
 
 ### 🔍 Diagnóstico de audio
-- Indicadores visuales en la tarjeta de llamada: **Mic OK** / **Sin mic** y **Par OK** / **Sin audio par**
+- Indicadores visuales: **Mic OK** / **Sin mic** y **Par OK** / **Sin audio par**
 - Buffer de PCM mientras el relay o SRTP se conectan (máx. 2 segundos)
-- Logs detallados en el servidor: codec, rtpSession, srtpStatus, relay, frames enviados
-- Contadores de diagnóstico: `totalPCMRecv`, `totalFramesSent`, `totalRelayRecv`
-- Flush automático del buffer cuando el relay se conecta
+- Logs detallados en el servidor con `-debug`
 
 ---
 
@@ -111,7 +113,7 @@ enrutadas independientemente por ID de llamada.
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                    NAVEGADOR (React client)                              │
 │   mic + speaker · WebRTC data channel (16 kHz PCM) · HTTP + SSE         │
-│   + Grabación · Contactos · Agenda · Notas (localStorage)               │
+│   + Contactos · Agenda · Notas (localStorage)                           │
 │   + Auth (JWT token en localStorage)                                    │
 └───────────────────────────────┬──────────────────────────────────────────┘
                                 │  Authorization: Bearer <token>
@@ -123,9 +125,13 @@ enrutadas independientemente por ID de llamada.
 │  SessionManager  registro de cuentas (client + CallManager + bridge)    │
 │  Broker          hub SSE (sesiones, auth, ciclo de vida de llamadas)    │
 │  Bridge          puente pion WebRTC (PCM 16 kHz ⇄ call core)          │
+│  RecordingStore  grabaciones WAV en PostgreSQL + disco                  │
+│  WebhookStore    configs de webhooks por sesión                         │
+│  WebhookDispatcher  envío async con HMAC-SHA256 + reintentos            │
 │                                                                           │
 │  internal/wa     adaptador VoipSocket sobre whatsmeow                   │
 │  internal/voip   call · signaling · media · transport · core · wanode   │
+│  internal/recording  WAV writer (16 kHz mono PCM) + Recorder           │
 └───────┬──────────────────────────────────────────────────┬──────────────┘
         │ señalización <call> (Signal/USync)               │ SRTP media
         ▼                                                   ▼
@@ -135,18 +141,18 @@ enrutadas independientemente por ID de llamada.
 └───────────────┘                                └──────────────────────┘
         │
         ▼
-┌───────────────┐
-│  PostgreSQL   │
-│  (users,      │
-│   sessions)   │
-└───────────────┘
+┌───────────────────────────────────────────────────────┐
+│  PostgreSQL                                           │
+│  users · sessions · recordings · webhook_configs      │
+│  webhook_deliveries · whatsmeow_*                     │
+└───────────────────────────────────────────────────────┘
 ```
 
 ### Estructura de archivos
 
 | Ruta | Responsabilidad |
 |---|---|
-| `cmd/server` | Broker HTTP/SSE, gestor de sesiones, puente WebRTC, ciclo de vida, auth JWT |
+| `cmd/server` | Broker HTTP/SSE, gestor de sesiones, puente WebRTC, auth JWT, grabación, webhooks |
 | `internal/wa` | `VoipSocket` — envía/recibe stanzas `<call>` vía whatsmeow |
 | `internal/voip/core` | Tipos de dominio, constantes, interfaz `VoipSocket` |
 | `internal/voip/wanode` | Helpers compartidos de nodo WhatsApp y JID |
@@ -154,6 +160,7 @@ enrutadas independientemente por ID de llamada.
 | `internal/voip/transport` | Relé SCTP, STUN, codificación de suscripciones |
 | `internal/voip/signaling` | Build/parse de stanzas `<call>`, crypto de claves de llamada |
 | `internal/voip/call` | `CallManager` — orquesta una llamada de principio a fin |
+| `internal/recording` | WAV writer (16 kHz mono PCM) + `Recorder` struct |
 | `client/` | React 19 + Vite + Tailwind v4 + shadcn/ui |
 
 ### Stores del cliente (Zustand + localStorage)
@@ -193,9 +200,13 @@ principio a fin. Secuencia de llamada saliente:
    ├── subida   (vos → par): PCM 16 kHz del navegador (data channel) → MLow encode → SRTP → relay
    └── bajada   (par → vos): relay → SRTP → MLow decode → PCM 16 kHz (data channel) → navegador
 
-6. Grabación                 → MediaRecorder captura mic + audio remoto → descarga WebM
+6. Grabación server-side     → WAV 16 kHz mono → disco + tabla recordings
+                               webhook "recording.ready" al finalizar
 
-7. Teardown                  → DELETE .../calls/{id} o events.CallTerminate
+7. Webhooks                  → call.started / call.ended / recording.ready
+                               HMAC-SHA256 + reintentos exponenciales
+
+8. Teardown                  → DELETE .../calls/{id} o events.CallTerminate
                                CallManager.EndCall + limpieza del puente
 ```
 
@@ -205,6 +216,7 @@ principio a fin. Secuencia de llamada saliente:
 
 - **Go 1.26+**
 - **Node 22+** y **npm** (solo para compilar/ejecutar el cliente React)
+- **PostgreSQL** (almacena usuarios, sesiones, grabaciones, webhooks)
 
 No se necesita compilador C, cgo ni bibliotecas nativas — el códec MLow es Go
 puro vendoreado (`internal/voip/media/mlow`).
@@ -332,16 +344,50 @@ Todas las rutas requieren header `Authorization: Bearer <token>` o query param `
 | `GET` | `/api/sessions/{sid}/history` | Historial de llamadas recientes (hasta 50 registros) |
 | `GET` | `/api/events` | Eventos server-sent (sesiones, auth, ciclo de llamadas) |
 
+### Grabaciones
+
+| Método | Ruta | Propósito |
+|---|---|---|
+| `GET` | `/api/sessions/{sid}/recordings` | Listar grabaciones de la sesión |
+| `GET` | `/api/recordings/{id}/download` | Descargar archivo WAV |
+
+### Webhooks
+
+| Método | Ruta | Propósito |
+|---|---|---|
+| `GET` | `/api/sessions/{sid}/webhooks` | Listar webhooks configurados |
+| `POST` | `/api/sessions/{sid}/webhooks` | Crear webhook (`{ url, events }`) |
+| `DELETE` | `/api/sessions/{sid}/webhooks/{wid}` | Eliminar webhook |
+
+**Eventos de webhook:**
+
+| Evento | Descripción | Data |
+|---|---|---|
+| `call.incoming` | Llamada entrante recibida | `call_id, peer, direction` |
+| `call.started` | Llamada activa (conectada) | `call_id, peer, direction` |
+| `call.ended` | Llamada finalizada | `call_id, reason` |
+| `recording.ready` | Grabación guardada en disco | `recording_id, call_id, duration_ms, file_size` |
+
+**Headers en cada webhook:**
+
+| Header | Descripción |
+|---|---|
+| `X-Webhook-Signature` | Firma HMAC-SHA256 del payload |
+| `X-Webhook-Event` | Tipo de evento |
+| `X-Webhook-ID` | ID único de la entrega |
+
 ---
 
 ## Navegación del cliente
 
-El cliente tiene 4 secciones accesibles desde la barra lateral:
+El cliente tiene 6 secciones accesibles desde la barra lateral:
 
 | Sección | Ícono | Descripción |
 |---|---|---|
-| **Calls** | 📞 | Marcador, llamadas activas, calidad, grabación, notas |
+| **Calls** | 📞 | Marcador, llamadas activas, calidad, notas |
 | **Contacts** | 👥 | ABM de contactos con favoritos y búsqueda |
+| **Recordings** | 🎙️ | Lista de grabaciones WAV con descarga |
+| **Webhooks** | 🔔 | Configurar URLs de webhook y gestionar secrets |
 | **Schedule** | 📅 | Agenda de llamadas programadas |
 | **Notes** | 📝 | Historial de notas con rating y tags |
 
@@ -362,6 +408,10 @@ La API usa **autenticación JWT** — todas las rutas `/api/*` (excepto login y 
 requieren un token válido en el header `Authorization: Bearer <token>` o como query
 parameter `?token=<token>`.
 
+Los webhooks usan **firma HMAC-SHA256** — cada entrega incluye un header
+`X-Webhook-Signature` con la firma del payload, verificable con el secret
+asociado al webhook.
+
 ### Configuración
 
 ```bash
@@ -374,9 +424,9 @@ export JWT_SECRET="tu-secreto-seguro-aqui"
 
 ### Base de datos
 
-- **PostgreSQL** almacena usuarios y sesiones de WhatsApp
+- **PostgreSQL** almacena usuarios, sesiones de WhatsApp, grabaciones y webhooks
 - Las credenciales de sesión de WhatsApp (secretos) se almacenan en las tablas `whatsmeow_*`
-- `wacalls.db` ya no se usa — los datos persisten en PostgreSQL
+- Las grabaciones WAV se almacenan en `/data/recordings` (volumen Docker)
 
 ---
 
