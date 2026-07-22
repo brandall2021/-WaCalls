@@ -1,4 +1,5 @@
 import { getAuthToken } from "@/stores/auth";
+import { getClientId } from "@/lib/client-id";
 
 const TOKEN_KEY = "wacalls.token";
 
@@ -22,6 +23,7 @@ const fetchWithTimeout = (url: string, init?: RequestInit, timeoutMs = FETCH_TIM
 const baseHeaders = (): HeadersInit => {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Client-Id": getClientId(),
   };
   const token = getAuthToken();
   if (token) {

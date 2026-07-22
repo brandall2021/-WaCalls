@@ -256,6 +256,11 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "operator already on a call"})
 		return
 	}
+	if sess.reg.count() > 0 {
+		s.log.Warn("doStartCall: session already has active call", "count", sess.reg.count())
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "session already has an active call, hang up first"})
+		return
+	}
 	if max := s.sessions.maxCalls; max > 0 && sess.reg.count() >= max {
 		s.log.Warn("doStartCall: max concurrent calls", "count", sess.reg.count(), "max", max)
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "max concurrent calls"})
@@ -274,6 +279,13 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 		SessionID: sess.id, CallID: callID, Owner: &owner, Direction: "outbound", Peer: peer.String(),
 		StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
 	})
+	if body.DurationMs > 0 {
+		go func() {
+			time.Sleep(time.Duration(body.DurationMs) * time.Millisecond)
+			s.log.Info("doStartCall: call duration expired, ending", "call_id", callID, "duration_ms", body.DurationMs)
+			sess.terminateCall(callID, core.EndCallReasonTimeout)
+		}()
+	}
 	s.log.Info("doStartCall: call created", "call_id", callID)
 	writeJSON(w, http.StatusOK, map[string]any{"call": map[string]string{"callId": callID}})
 }
