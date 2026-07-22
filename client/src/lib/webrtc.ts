@@ -29,27 +29,39 @@ export const openCall = async (
   callId: string,
   micDeviceId: string | null,
 ): Promise<OpenCall> => {
+  console.log(`[WEBRTC] openCall sid=${sid} callId=${callId} mic=${micDeviceId}`);
   const micStream = await navigator.mediaDevices.getUserMedia({
     audio: micDeviceId ? { deviceId: { exact: micDeviceId } } : true,
   });
+  console.log(`[WEBRTC] micStream tracks:`, micStream.getTracks().map(t => `${t.kind}:${t.label}`));
 
   const pc = new RTCPeerConnection({
     iceServers: STUN_SERVERS,
     iceCandidatePoolSize: 2,
   });
+  console.log(`[WEBRTC] PeerConnection created`);
+
+  pc.oniceconnectionstatechange = () => console.log(`[WEBRTC] ICE state: ${pc.iceConnectionState}`);
+  pc.onconnectionstatechange = () => console.log(`[WEBRTC] PC state: ${pc.connectionState}`);
+  pc.onicecandidate = (e) => { if (e.candidate) console.log(`[WEBRTC] ICE candidate: ${e.candidate.candidate.substring(0, 80)}...`); };
 
   const dc = pc.createDataChannel(PCM_CHANNEL_LABEL, { ordered: true });
   dc.binaryType = "arraybuffer";
+  dc.onopen = () => console.log(`[WEBRTC] DataChannel OPEN`);
+  dc.onclose = () => console.log(`[WEBRTC] DataChannel CLOSED`);
+  dc.onerror = (e) => console.error(`[WEBRTC] DataChannel ERROR`, e);
 
   const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
   await ctx.audioWorklet.addModule(CAPTURE_WORKLET_URL);
   await ctx.audioWorklet.addModule(PLAYBACK_WORKLET_URL);
   if (ctx.state === "suspended") await ctx.resume();
+  console.log(`[WEBRTC] AudioContext state: ${ctx.state} sampleRate: ${ctx.sampleRate}`);
 
   const micSource = ctx.createMediaStreamSource(micStream);
   const captureNode = new AudioWorkletNode(ctx, CAPTURE_PROCESSOR_NAME);
   let buffer: ArrayBuffer | null = null;
   let canSend = true;
+  let sentCount = 0;
 
   const sendBuffer = () => {
     if (!canSend || !buffer || dc.readyState !== "open") return;
@@ -59,6 +71,8 @@ export const openCall = async (
     }
     dc.send(buffer);
     buffer = null;
+    sentCount++;
+    if (sentCount % 500 === 0) console.log(`[WEBRTC] PCM sent: ${sentCount} chunks, buffered: ${dc.bufferedAmount}`);
   };
 
   dc.onbufferedamountlow = () => {
@@ -76,38 +90,51 @@ export const openCall = async (
   const streamDest = ctx.createMediaStreamDestination();
   playbackNode.connect(streamDest);
   playbackNode.connect(ctx.destination);
+  let recvCount = 0;
   dc.onmessage = (e: MessageEvent<ArrayBuffer>) => {
     playbackNode.port.postMessage(int16LEToFloat32(e.data));
+    recvCount++;
+    if (recvCount % 500 === 0) console.log(`[WEBRTC] PCM recv: ${recvCount} chunks, size: ${e.data.byteLength}`);
   };
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
+  console.log(`[WEBRTC] SDP offer created, ICE gathering: ${pc.iceGatheringState}`);
 
   await new Promise<void>((resolve) => {
     if (pc.iceGatheringState === "complete") {
+      console.log(`[WEBRTC] ICE gathering already complete`);
       resolve();
       return;
     }
-    const timer = setTimeout(resolve, ICE_GATHERING_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      console.log(`[WEBRTC] ICE gathering timeout (${ICE_GATHERING_TIMEOUT_MS}ms), state: ${pc.iceGatheringState}`);
+      resolve();
+    }, ICE_GATHERING_TIMEOUT_MS);
     pc.addEventListener("icegatheringstatechange", () => {
       if (pc.iceGatheringState === "complete") {
         clearTimeout(timer);
+        console.log(`[WEBRTC] ICE gathering complete`);
         resolve();
       }
     });
   });
 
+  console.log(`[WEBRTC] Sending SDP offer to server /api/sessions/${sid}/calls/${callId}/webrtc`);
   const { sdp_answer } = await apiPost<{ sdp_answer: string }>(
     `/api/sessions/${sid}/calls/${callId}/webrtc`,
     { sdp_offer: pc.localDescription!.sdp },
   );
+  console.log(`[WEBRTC] Got SDP answer (${sdp_answer.length} bytes), setting remote description`);
   await pc.setRemoteDescription({ type: "answer", sdp: sdp_answer });
+  console.log(`[WEBRTC] Remote description set, connection should be establishing`);
 
   return {
     pc,
     micStream,
     remoteStream: streamDest.stream,
     close: () => {
+      console.log(`[WEBRTC] close() called for callId=${callId}`);
       try {
         micStream.getTracks().forEach((t) => t.stop());
       } catch {}

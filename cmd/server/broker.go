@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -52,14 +53,16 @@ type Broker struct {
 	subs    map[*subscriber]struct{}
 	calls   map[string]*CallRecord
 	history []CallRecord
+	log     *slog.Logger
 
 	SnapshotFn func() []any
 }
 
-func NewBroker() *Broker {
+func NewBroker(log *slog.Logger) *Broker {
 	return &Broker{
 		subs:  map[*subscriber]struct{}{},
 		calls: map[string]*CallRecord{},
+		log:   log,
 	}
 }
 
@@ -113,6 +116,7 @@ func (b *Broker) upsertCall(r CallRecord) {
 	cp := r
 	b.calls[r.CallID] = &cp
 	b.mu.Unlock()
+	b.log.Info("broker upsertCall", "call_id", r.CallID, "status", r.Status, "owner", r.Owner, "peer", r.Peer)
 	b.broadcastCallList()
 	b.broadcast(map[string]any{
 		"type": "call-status", "sessionId": r.SessionID, "id": r.CallID, "owner": r.Owner,
@@ -164,6 +168,7 @@ func (b *Broker) endCall(id, reason string) {
 	c, ok := b.calls[id]
 	if !ok {
 		b.mu.Unlock()
+		b.log.Warn("broker.endCall: call not found", "call_id", id)
 		return
 	}
 	now := time.Now().UnixMilli()
@@ -177,6 +182,7 @@ func (b *Broker) endCall(id, reason string) {
 	sessionID := c.SessionID
 	b.mu.Unlock()
 
+	b.log.Info("broker.endCall", "call_id", id, "reason", reason, "owner", owner, "active_subs", len(b.subs))
 	data, err := json.Marshal(map[string]any{
 		"type": "call-ended", "sessionId": sessionID, "id": id, "owner": owner, "reason": reason, "endedAt": now,
 	})
@@ -186,6 +192,7 @@ func (b *Broker) endCall(id, reason string) {
 			select {
 			case s.ch <- data:
 			default:
+				b.log.Warn("broker.endCall: subscriber channel full, forcing delivery", "client_id", s.clientID)
 				go func(sub *subscriber) {
 					sub.ch <- data
 				}(s)
@@ -241,6 +248,7 @@ func (b *Broker) serveSSE(w http.ResponseWriter, r *http.Request, clientID strin
 
 	sub := b.subscribe(clientID)
 	defer b.unsubscribe(sub)
+	b.log.Info("SSE client connected", "client_id", clientID, "total_subs", len(b.subs))
 
 	if b.SnapshotFn != nil {
 		for _, ev := range b.SnapshotFn() {
@@ -255,9 +263,11 @@ func (b *Broker) serveSSE(w http.ResponseWriter, r *http.Request, clientID strin
 	for {
 		select {
 		case <-r.Context().Done():
+			b.log.Info("SSE client disconnected", "client_id", clientID)
 			return
 		case data := <-sub.ch:
 			if _, err := w.Write(append(append([]byte("data: "), data...), '\n', '\n')); err != nil {
+				b.log.Warn("SSE write error", "client_id", clientID, "err", err)
 				return
 			}
 			flusher.Flush()

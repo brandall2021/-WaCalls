@@ -38,20 +38,25 @@ class EventStream {
     const token = getAuthToken();
     const params = new URLSearchParams({ clientId });
     if (token) params.set("token", token);
+    console.log(`[SSE] connecting with clientId=${clientId} token=${token ? token.substring(0, 20) + '...' : 'NONE'}`);
     this.#es = new EventSource(`/api/events?${params.toString()}`);
+    this.#es.onopen = () => console.log(`[SSE] connected`);
     this.#es.onmessage = (ev) => {
       try {
         const parsed: BrokerEvent = JSON.parse(ev.data);
+        console.log(`[SSE] event: ${parsed.type}`, parsed);
         for (const l of this.#listeners) l(parsed);
       } catch {}
     };
-    this.#es.onerror = () => {
+    this.#es.onerror = (e) => {
+      console.warn(`[SSE] error, readyState=${this.#es?.readyState}`, e);
       this.#es?.close();
       this.#es = null;
       if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
       this.#reconnectTimer = setTimeout(() => {
         this.#reconnectTimer = null;
         if (!this.#es && this.#clientId) {
+          console.log(`[SSE] reconnecting...`);
           this.connect(this.#clientId);
         }
       }, 2000);

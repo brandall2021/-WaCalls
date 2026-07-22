@@ -1,11 +1,14 @@
 package main
 
-import "testing"
+import (
+	"log/slog"
+	"testing"
+)
 
 func ownerPtr(s string) *string { return &s }
 
 func TestOwnerActiveCall(t *testing.T) {
-	b := NewBroker()
+	b := NewBroker(slog.Default())
 	b.upsertCall(CallRecord{SessionID: "s1", CallID: "c1", Owner: ownerPtr("op-A"), Status: StatusConnected})
 	b.upsertCall(CallRecord{SessionID: "s1", CallID: "c2", Owner: ownerPtr("op-B"), Status: StatusRinging})
 

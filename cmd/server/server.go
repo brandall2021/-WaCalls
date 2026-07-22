@@ -69,7 +69,7 @@ func newServer(ctx context.Context, databaseURL, staticDir string, maxCalls int,
 		waLogger = waLog.Stdout("WA", "INFO", true)
 	}
 
-	broker := NewBroker()
+	broker := NewBroker(log)
 	mgr := newSessionManager(ctx, container, broker, store, recStore, whStore, waLogger, log, maxCalls)
 	broker.SnapshotFn = mgr.snapshotEvents
 

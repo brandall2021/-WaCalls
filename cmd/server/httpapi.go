@@ -235,7 +235,9 @@ func (s *server) handleHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Request) {
+	s.log.Info("doStartCall called", "session", sess.id)
 	if sess.client.Store.ID == nil {
+		s.log.Warn("doStartCall: not paired")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "not paired"})
 		return
 	}
@@ -250,17 +252,21 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 	}
 	owner := clientID(r)
 	if other := s.broker.ownerActiveCall(owner); other != "" {
+		s.log.Warn("doStartCall: operator already on a call", "owner", owner, "active_call", other)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "operator already on a call"})
 		return
 	}
 	if max := s.sessions.maxCalls; max > 0 && sess.reg.count() >= max {
+		s.log.Warn("doStartCall: max concurrent calls", "count", sess.reg.count(), "max", max)
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "max concurrent calls"})
 		return
 	}
 	peer := types.NewJID(normalizePhone(body.Phone), types.DefaultUserServer)
 
+	s.log.Info("doStartCall: starting outgoing call", "phone", body.Phone, "peer", peer.String(), "owner", owner)
 	callID, err := sess.startOutgoing(r.Context(), peer, false)
 	if err != nil {
+		s.log.Error("doStartCall: startOutgoing failed", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -268,6 +274,7 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 		SessionID: sess.id, CallID: callID, Owner: &owner, Direction: "outbound", Peer: peer.String(),
 		StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
 	})
+	s.log.Info("doStartCall: call created", "call_id", callID)
 	writeJSON(w, http.StatusOK, map[string]any{"call": map[string]string{"callId": callID}})
 }
 
@@ -310,45 +317,59 @@ func (s *server) doWebRTC(sess *Session, w http.ResponseWriter, r *http.Request)
 
 func (s *server) doAccept(sess *Session, w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	s.log.Info("doAccept called", "session", sess.id, "call_id", id)
 	ac, ok := sess.reg.get(id)
 	if !ok {
+		s.log.Warn("doAccept: call not found in registry", "call_id", id)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such call"})
 		return
 	}
 	owner := clientID(r)
 	if other := s.broker.ownerActiveCall(owner); other != "" && other != id {
+		s.log.Warn("doAccept: operator already on a call", "owner", owner, "active_call", other)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "operator already on a call"})
 		return
 	}
 	if !s.broker.setOwner(id, owner) {
+		s.log.Warn("doAccept: call claimed by another client", "call_id", id, "owner", owner)
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "claimed by another client"})
 		return
 	}
 	s.broker.emitIncomingClaimed(sess.id, id, owner)
+	s.log.Info("doAccept: accepting call", "call_id", id, "owner", owner)
 	if err := ac.cm.AcceptCall(r.Context(), id); err != nil {
+		s.log.Error("doAccept: AcceptCall failed", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	s.log.Info("doAccept: call accepted successfully", "call_id", id)
 	writeJSON(w, http.StatusOK, map[string]any{"call": map[string]string{"callId": id}})
 }
 
 func (s *server) doReject(sess *Session, w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	s.log.Info("doReject called", "session", sess.id, "call_id", id)
 	if ac, ok := sess.reg.get(id); ok {
 		_ = ac.cm.RejectCall(r.Context(), id, core.EndCallReasonDeclined)
 	}
 	sess.removeCall(id)
 	s.broker.endCall(id, string(core.EndCallReasonDeclined))
+	s.log.Info("doReject: call rejected", "call_id", id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *server) doEndCall(sess *Session, w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	s.log.Info("doEndCall called", "session", sess.id, "call_id", id)
 	if ac, ok := sess.reg.get(id); ok {
+		s.log.Info("doEndCall: ending call via CallManager", "call_id", id)
 		_ = ac.cm.EndCall(r.Context(), core.EndCallReasonUserEnded)
+	} else {
+		s.log.Warn("doEndCall: call not found in registry, cleaning broker only", "call_id", id)
 	}
 	sess.removeCall(id)
 	s.broker.endCall(id, string(core.EndCallReasonUserEnded))
+	s.log.Info("doEndCall: cleanup done", "call_id", id)
 	w.WriteHeader(http.StatusNoContent)
 }
 

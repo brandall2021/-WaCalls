@@ -23,13 +23,14 @@ const statusVariant: Record<CallStatus, "success" | "secondary" | "muted"> = {
   ended: "muted",
 };
 
-const Meter = ({ label, db }: { label: string; db: number }) => {
+const Meter = ({ label, db, color }: { label: string; db: number; color?: string }) => {
   const pct = Math.max(0, Math.min(100, Math.round(((db + 60) / 60) * 100)));
+  const barColor = color || (db > -50 ? "bg-green-500" : "bg-primary");
   return (
     <div className="space-y-1">
       <p className="text-xs text-muted-foreground">{label}</p>
       <div className="h-2 overflow-hidden rounded-full bg-muted">
-        <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+        <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -58,6 +59,7 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
   const [showNotes, setShowNotes] = useState(false);
   const [noteText, setNoteText] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [micActive, setMicActive] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => force((n) => n + 1), 1000);
@@ -76,6 +78,15 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
         clearInterval(wait);
       }
     }, 200);
+
+    const tracks = conn.micStream.getAudioTracks();
+    if (tracks.length > 0) {
+      setMicActive(tracks[0].enabled && tracks[0].readyState === "live");
+      tracks[0].onunmute = () => setMicActive(true);
+      tracks[0].onmute = () => setMicActive(false);
+      tracks[0].onended = () => setMicActive(false);
+    }
+
     return () => {
       offMic();
       offPeer?.();
@@ -132,6 +143,14 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
             </Badge>
           </div>
           <div className="flex items-center gap-1">
+            {conn && (
+              <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                micActive ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-muted text-muted-foreground"
+              }`}>
+                <Mic className={`h-3.5 w-3.5 ${micActive ? "text-green-500" : ""}`} />
+                {micActive ? "MIC ON" : "MIC OFF"}
+              </div>
+            )}
             {call.status === "connected" && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -171,26 +190,27 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
               </TooltipTrigger>
               <TooltipContent>{t("notes")}</TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  onClick={() => {
-                    sounds.disconnect();
-                    endCall.mutate({ sid: call.sessionId, callId: call.callId });
-                  }}
-                  aria-label={t("end_call")}
-                >
-                  <PhoneOff className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t("end_call")}</TooltipContent>
-            </Tooltip>
           </div>
         </div>
 
-        <Meter label="Mic" db={micDb} />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="destructive"
+            size="lg"
+            className="flex-1 h-11 text-base font-semibold"
+            onClick={() => {
+              console.log(`[CALL_CARD] END CALL clicked for ${call.callId}`);
+              sounds.disconnect();
+              endCall.mutate({ sid: call.sessionId, callId: call.callId });
+            }}
+            disabled={endCall.isPending}
+          >
+            <PhoneOff className="h-5 w-5 mr-2" />
+            {endCall.isPending ? "Cortando..." : "CORTAR LLAMADA"}
+          </Button>
+        </div>
+
+        <Meter label="Mic" db={micDb} color={micActive ? "bg-green-500" : undefined} />
         <Meter label="Peer" db={peerDb} />
 
         {call.status === "connected" && (

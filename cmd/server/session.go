@@ -59,6 +59,7 @@ func (s *Session) createCall(callID string) *call.CallManager {
 
 func (s *Session) wireCall(cm *call.CallManager, callID string) {
 	cm.OnIncoming = func(c *call.CallInfo) {
+		s.log.Info("OnIncoming", "call_id", c.CallID, "peer", c.PeerJid)
 		s.mgr.broker.upsertCall(CallRecord{
 			SessionID: s.id, CallID: c.CallID, Direction: "inbound", Peer: c.PeerJid,
 			StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
@@ -70,6 +71,7 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		})
 	}
 	cm.OnStateChange = func(c *call.CallInfo) {
+		s.log.Info("OnStateChange", "call_id", c.CallID, "state", string(c.StateData.State), "ended", c.IsEnded())
 		if c.IsEnded() {
 			return
 		}
@@ -89,6 +91,7 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		s.mgr.broker.upsertCall(rec)
 
 		if c.StateData.State == core.CallStateActive {
+			s.log.Info("OnStateChange: call ACTIVE, starting recording", "call_id", c.CallID)
 			s.startRecording(c.CallID, c.PeerJid, dir)
 			s.mgr.webhookDisp.Dispatch(s.id, WebhookEvent{
 				Type: "call.started", SessionID: s.id, Timestamp: time.Now().UnixMilli(),
@@ -97,6 +100,7 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		}
 	}
 	cm.OnEnded = func(c *call.CallInfo) {
+		s.log.Info("OnEnded", "call_id", c.CallID, "reason", string(c.StateData.EndReason))
 		s.stopRecording(c.CallID)
 		s.removeCall(c.CallID)
 		s.mgr.broker.endCall(c.CallID, string(c.StateData.EndReason))
@@ -115,6 +119,8 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		}
 		if ac.bridge != nil {
 			_ = ac.bridge.WritePCM(pcm16)
+		} else {
+			s.log.Warn("OnPeerAudio: bridge is nil, audio dropped", "call_id", callID)
 		}
 	}
 }
@@ -169,29 +175,44 @@ func (s *Session) handleEvent(rawEvt any) {
 	ctx := context.Background()
 	switch evt := rawEvt.(type) {
 	case *events.Connected:
+		s.log.Info("WA event: Connected")
 		if id := s.client.Store.ID; id != nil {
 			_ = s.mgr.store.setJID(s.mgr.appCtx, s.id, id.String())
 		}
 		s.setAuth(AuthSnapshot{State: "open", Paired: true})
 	case *events.LoggedOut:
+		s.log.Info("WA event: LoggedOut")
 		s.setAuth(AuthSnapshot{State: "logged_out", Paired: false})
 	case *events.CallOffer:
+		s.log.Info("WA event: CallOffer", "from", evt.From.String())
 		s.onIncomingOffer(ctx, evt)
 	case *events.CallAccept:
+		s.log.Info("WA event: CallAccept", "from", evt.From.String())
 		if ac, ok := s.callForEvent(evt.From, evt.Data); ok {
 			ac.cm.HandleCallAccept(ctx, wrapCall(evt.From, evt.Data), evt.From)
+		} else {
+			s.log.Warn("WA event: CallAccept but no matching call in registry", "from", evt.From.String())
 		}
 	case *events.CallTransport:
+		s.log.Info("WA event: CallTransport", "from", evt.From.String())
 		if ac, ok := s.callForEvent(evt.From, evt.Data); ok {
 			ac.cm.HandleCallTransport(ctx, wrapCall(evt.From, evt.Data), evt.From)
+		} else {
+			s.log.Warn("WA event: CallTransport but no matching call in registry", "from", evt.From.String())
 		}
 	case *events.CallTerminate:
+		s.log.Info("WA event: CallTerminate", "from", evt.From.String())
 		if ac, ok := s.callForEvent(evt.From, evt.Data); ok {
 			ac.cm.HandleCallTerminate(wrapCall(evt.From, evt.Data))
+		} else {
+			s.log.Warn("WA event: CallTerminate but no matching call in registry", "from", evt.From.String())
 		}
 	case *events.CallReject:
+		s.log.Info("WA event: CallReject", "from", evt.From.String())
 		if ac, ok := s.callForEvent(evt.From, evt.Data); ok {
 			ac.cm.HandleCallTerminate(wrapCall(evt.From, evt.Data))
+		} else {
+			s.log.Warn("WA event: CallReject but no matching call in registry", "from", evt.From.String())
 		}
 	}
 }
