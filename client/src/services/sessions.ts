@@ -1,5 +1,6 @@
 import { apiGet, apiPost, apiDelete } from "@/lib/api";
 import { getClientId } from "@/lib/client-id";
+import { getAuthToken } from "@/stores/auth";
 import type { SessionInfo } from "@/types/session";
 
 export const listSessions = () =>
@@ -13,7 +14,11 @@ export const deleteSession = (id: string) => apiDelete(`/api/sessions/${id}`);
 const postVoid = async (path: string): Promise<void> => {
   const r = await fetch(path, {
     method: "POST",
-    headers: { "X-Client-Id": getClientId(), "Content-Type": "application/json" },
+    headers: {
+      "X-Client-Id": getClientId(),
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getAuthToken()}`,
+    },
     body: "{}",
   });
   if (!r.ok) throw new Error(`${path} ${r.status}`);

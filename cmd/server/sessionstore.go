@@ -34,7 +34,7 @@ func newSessionID() string {
 }
 
 func (s *sessionStore) list(ctx context.Context) ([]sessionRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, COALESCE(jid, '') FROM sessions ORDER BY rowid`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, COALESCE(jid, '') FROM sessions ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -51,16 +51,16 @@ func (s *sessionStore) list(ctx context.Context) ([]sessionRow, error) {
 }
 
 func (s *sessionStore) insert(ctx context.Context, id, name string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions (id, name, jid) VALUES (?, ?, NULL)`, id, name)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions (id, name, jid) VALUES ($1, $2, NULL)`, id, name)
 	return err
 }
 
 func (s *sessionStore) setJID(ctx context.Context, id, jid string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET jid = ? WHERE id = ?`, jid, id)
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET jid = $1 WHERE id = $2`, jid, id)
 	return err
 }
 
 func (s *sessionStore) delete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = $1`, id)
 	return err
 }

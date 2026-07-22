@@ -15,19 +15,25 @@ import (
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /api/sessions", s.handleSessionList)
-	mux.HandleFunc("POST /api/sessions", s.handleSessionCreate)
-	mux.HandleFunc("DELETE /api/sessions/{sid}", s.handleSessionDelete)
-	mux.HandleFunc("POST /api/sessions/{sid}/logout", s.handleSessionLogout)
-	mux.HandleFunc("POST /api/sessions/{sid}/pair", s.handleSessionPair)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls", s.handleStartCall)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/webrtc", s.handleWebRTC)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/accept", s.handleAccept)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/reject", s.handleReject)
-	mux.HandleFunc("DELETE /api/sessions/{sid}/calls/{id}", s.handleEndCall)
-	mux.HandleFunc("GET /api/sessions/{sid}/history", s.handleHistory)
+	mux.HandleFunc("POST /api/auth/register", s.handleRegister)
+	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
+	mux.HandleFunc("GET /api/auth/me", s.handleMe)
 
-	mux.HandleFunc("GET /api/events", s.handleEvents)
+	api := http.NewServeMux()
+	api.HandleFunc("GET /api/sessions", s.handleSessionList)
+	api.HandleFunc("POST /api/sessions", s.handleSessionCreate)
+	api.HandleFunc("DELETE /api/sessions/{sid}", s.handleSessionDelete)
+	api.HandleFunc("POST /api/sessions/{sid}/logout", s.handleSessionLogout)
+	api.HandleFunc("POST /api/sessions/{sid}/pair", s.handleSessionPair)
+	api.HandleFunc("POST /api/sessions/{sid}/calls", s.handleStartCall)
+	api.HandleFunc("POST /api/sessions/{sid}/calls/{id}/webrtc", s.handleWebRTC)
+	api.HandleFunc("POST /api/sessions/{sid}/calls/{id}/accept", s.handleAccept)
+	api.HandleFunc("POST /api/sessions/{sid}/calls/{id}/reject", s.handleReject)
+	api.HandleFunc("DELETE /api/sessions/{sid}/calls/{id}", s.handleEndCall)
+	api.HandleFunc("GET /api/sessions/{sid}/history", s.handleHistory)
+	api.HandleFunc("GET /api/events", s.handleEvents)
+
+	mux.Handle("/api/", s.authMiddleware(api))
 
 	if s.staticDir != "" {
 		if _, err := os.Stat(s.staticDir); err == nil {
@@ -40,7 +46,7 @@ func (s *server) routes() http.Handler {
 func withCORS(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Client-Id")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Id")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -74,6 +80,67 @@ func (s *server) sessionByID(w http.ResponseWriter, sid string) *Session {
 
 func (s *server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	s.broker.serveSSE(w, r, clientID(r))
+}
+
+func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+		Name     string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
+		strings.TrimSpace(body.Email) == "" || strings.TrimSpace(body.Password) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email and password required"})
+		return
+	}
+	user, err := s.auth.Register(r.Context(), body.Email, body.Password, body.Name)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	token, err := s.auth.GenerateToken(user)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": user, "token": token})
+}
+
+func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
+		strings.TrimSpace(body.Email) == "" || strings.TrimSpace(body.Password) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email and password required"})
+		return
+	}
+	user, err := s.auth.Login(r.Context(), body.Email, body.Password)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		return
+	}
+	token, err := s.auth.GenerateToken(user)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": user, "token": token})
+}
+
+func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {
+	uid := userIDFromContext(r.Context())
+	if uid == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	user, err := s.auth.GetUserByID(r.Context(), uid)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
 }
 
 func (s *server) handleSessionList(w http.ResponseWriter, r *http.Request) {
