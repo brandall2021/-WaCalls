@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"wacalls/internal/sip"
 )
 
 func main() {
@@ -18,6 +20,14 @@ func main() {
 	staticDir := flag.String("static", "client/dist", "static client directory (optional)")
 	debug := flag.Bool("debug", false, "verbose logging")
 	maxCalls := flag.Int("max-calls-per-session", 8, "max concurrent calls per session (0 = unlimited)")
+
+	// SIP bridge flags
+	sipEnabled := flag.Bool("sip", false, "enable SIP bridge to Asterisk")
+	sipAddr := flag.String("sip-addr", "", "Asterisk SIP address (host:port)")
+	sipExt := flag.String("sip-ext", "", "SIP extension number")
+	sipPass := flag.String("sip-pass", "", "SIP extension password")
+	sipDomain := flag.String("sip-domain", "", "SIP domain (default: sip-addr)")
+
 	flag.Parse()
 
 	if *databaseURL == "" {
@@ -27,6 +37,23 @@ func main() {
 		log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 		log.Error("DATABASE_URL is required (use -database-url flag or set DATABASE_URL env)")
 		os.Exit(1)
+	}
+
+	// SIP env fallbacks
+	if !*sipEnabled {
+		*sipEnabled = os.Getenv("SIP_ENABLED") == "true"
+	}
+	if *sipAddr == "" {
+		*sipAddr = os.Getenv("SIP_ADDR")
+	}
+	if *sipExt == "" {
+		*sipExt = os.Getenv("SIP_EXT")
+	}
+	if *sipPass == "" {
+		*sipPass = os.Getenv("SIP_PASS")
+	}
+	if *sipDomain == "" {
+		*sipDomain = os.Getenv("SIP_DOMAIN")
 	}
 
 	level := slog.LevelInfo
@@ -39,12 +66,28 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv, err := newServer(ctx, *databaseURL, *staticDir, *maxCalls, log)
+	var sipConfig *sip.Config
+	if *sipEnabled && *sipAddr != "" && *sipExt != "" {
+		sipConfig = &sip.Config{
+			AsteriskAddr: *sipAddr,
+			Extension:    *sipExt,
+			Password:     *sipPass,
+			Domain:       *sipDomain,
+			ListenAddr:   ":0",
+		}
+		log.Info("SIP bridge enabled", "asterisk", *sipAddr, "ext", *sipExt)
+	}
+
+	srv, err := newServer(ctx, *databaseURL, *staticDir, *maxCalls, sipConfig, log)
 	if err != nil {
 		log.Error("startup failed", "err", err)
 		os.Exit(1)
 	}
 	defer srv.sessions.disconnectAll()
+
+	if srv.sipUA != nil {
+		defer srv.sipUA.Stop()
+	}
 
 	if err := srv.auth.Seed(ctx); err != nil {
 		log.Error("seed failed", "err", err)

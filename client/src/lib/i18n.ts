@@ -98,6 +98,8 @@ type TranslationKeys = {
   webhooks_nav: string;
   webhooks: string;
   no_webhooks: string;
+  // SIP
+  sip_nav: string;
   // Footer
   accounts: string;
   theme: string;
@@ -190,6 +192,7 @@ const translations: Record<Locale, TranslationKeys> = {
     webhooks_nav: "Webhooks",
     webhooks: "Webhooks",
     no_webhooks: "No webhooks configured",
+    sip_nav: "SIP Bridge",
     accounts: "Accounts",
     theme: "Theme",
     language: "Language",
@@ -279,6 +282,7 @@ const translations: Record<Locale, TranslationKeys> = {
     webhooks_nav: "Webhooks",
     webhooks: "Webhooks",
     no_webhooks: "Sin webhooks configurados",
+    sip_nav: "Puente SIP",
     accounts: "Cuentas",
     theme: "Tema",
     language: "Idioma",
@@ -368,6 +372,7 @@ const translations: Record<Locale, TranslationKeys> = {
     webhooks_nav: "Webhooks",
     webhooks: "Webhooks",
     no_webhooks: "Nenhum webhook configurado",
+    sip_nav: "Ponte SIP",
     accounts: "Contas",
     theme: "Tema",
     language: "Idioma",

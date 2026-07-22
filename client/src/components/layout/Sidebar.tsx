@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Plus, Trash2, Phone, Users, CalendarDays, StickyNote, Mic, Webhook } from "lucide-react";
+import { Loader2, Plus, Trash2, Phone, Users, CalendarDays, StickyNote, Mic, Webhook, Landmark } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -9,7 +9,7 @@ import { createSession, deleteSession } from "@/services/sessions";
 import { useI18n } from "@/lib/i18n";
 import type { SessionInfo, SessionState } from "@/types/session";
 
-export type PageId = "calls" | "contacts" | "schedule" | "notes" | "recordings" | "webhooks";
+export type PageId = "calls" | "contacts" | "schedule" | "notes" | "recordings" | "webhooks" | "sip";
 
 const dotClass: Record<SessionState, string> = {
   open: "bg-primary",
@@ -23,6 +23,7 @@ const navItems: { id: PageId; icon: typeof Phone; labelKey: string }[] = [
   { id: "contacts", icon: Users, labelKey: "contacts_nav" },
   { id: "recordings", icon: Mic, labelKey: "recordings_nav" },
   { id: "webhooks", icon: Webhook, labelKey: "webhooks_nav" },
+  { id: "sip", icon: Landmark, labelKey: "sip_nav" },
   { id: "schedule", icon: CalendarDays, labelKey: "schedule_nav" },
   { id: "notes", icon: StickyNote, labelKey: "notes_nav" },
 ];

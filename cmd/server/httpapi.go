@@ -37,6 +37,9 @@ func (s *server) routes() http.Handler {
 	api.HandleFunc("GET /api/sessions/{sid}/webhooks", s.handleListWebhooks)
 	api.HandleFunc("POST /api/sessions/{sid}/webhooks", s.handleCreateWebhook)
 	api.HandleFunc("DELETE /api/sessions/{sid}/webhooks/{wid}", s.handleDeleteWebhook)
+	api.HandleFunc("GET /api/sip/status", s.handleSIPStatus)
+	api.HandleFunc("POST /api/sip/call", s.handleSIPCall)
+	api.HandleFunc("DELETE /api/sip/call/{callID}", s.handleSIPHangup)
 	api.HandleFunc("GET /api/events", s.handleEvents)
 
 	mux.Handle("/api/", s.authMiddleware(api))
@@ -442,6 +445,62 @@ func (s *server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	wid := r.PathValue("wid")
 	if err := s.sessions.webhookStore.Delete(r.Context(), wid); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) handleSIPStatus(w http.ResponseWriter, r *http.Request) {
+	if s.sipUA == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false})
+		return
+	}
+	calls := s.sipUA.ListCalls()
+	type callInfo struct {
+		ID    string `json:"id"`
+		Peer  string `json:"peer"`
+		State int    `json:"state"`
+	}
+	var list []callInfo
+	for _, c := range calls {
+		list = append(list, callInfo{ID: c.ID, Peer: c.RemoteURI, State: int(c.State)})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled":  true,
+		"asterisk": s.sipUA.Config().AsteriskAddr,
+		"ext":      s.sipUA.Config().Extension,
+		"calls":    list,
+	})
+}
+
+func (s *server) handleSIPCall(w http.ResponseWriter, r *http.Request) {
+	if s.sipUA == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "SIP bridge not enabled"})
+		return
+	}
+	var body struct {
+		PeerURI string `json:"peer_uri"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PeerURI == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "peer_uri required"})
+		return
+	}
+	callID, err := s.sipUA.MakeCall(body.PeerURI)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"call_id": callID})
+}
+
+func (s *server) handleSIPHangup(w http.ResponseWriter, r *http.Request) {
+	if s.sipUA == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "SIP bridge not enabled"})
+		return
+	}
+	callID := r.PathValue("callID")
+	if err := s.sipUA.Hangup(callID); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

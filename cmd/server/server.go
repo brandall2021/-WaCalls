@@ -6,17 +6,21 @@ import (
 	"log/slog"
 	"os"
 
+	"wacalls/internal/sip"
+
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
 type server struct {
-	broker    *Broker
-	sessions  *SessionManager
-	auth      *authStore
-	log       *slog.Logger
-	staticDir string
+	broker     *Broker
+	sessions   *SessionManager
+	auth       *authStore
+	sipBridge  *sip.SIPWhatsAppBridge
+	sipUA      *sip.UA
+	log        *slog.Logger
+	staticDir  string
 }
 
 func openDB(databaseURL string) (*sql.DB, error) {
@@ -29,7 +33,7 @@ func openDB(databaseURL string) (*sql.DB, error) {
 	return db, nil
 }
 
-func newServer(ctx context.Context, databaseURL, staticDir string, maxCalls int, log *slog.Logger) (*server, error) {
+func newServer(ctx context.Context, databaseURL, staticDir string, maxCalls int, sipConfig *sip.Config, log *slog.Logger) (*server, error) {
 	db, err := openDB(databaseURL)
 	if err != nil {
 		return nil, err
@@ -69,5 +73,18 @@ func newServer(ctx context.Context, databaseURL, staticDir string, maxCalls int,
 	mgr := newSessionManager(ctx, container, broker, store, recStore, whStore, waLogger, log, maxCalls)
 	broker.SnapshotFn = mgr.snapshotEvents
 
-	return &server{broker: broker, sessions: mgr, auth: auth, log: log, staticDir: staticDir}, nil
+	srv := &server{broker: broker, sessions: mgr, auth: auth, log: log, staticDir: staticDir}
+
+	if sipConfig != nil && sipConfig.AsteriskAddr != "" {
+		ua := sip.NewUA(*sipConfig, log)
+		if err := ua.Start(); err != nil {
+			log.Warn("SIP UA failed to start", "err", err)
+		} else {
+			srv.sipUA = ua
+			srv.sipBridge = sip.NewSIPWhatsAppBridge(ua, log)
+			log.Info("SIP bridge started", "asterisk", sipConfig.AsteriskAddr, "ext", sipConfig.Extension)
+		}
+	}
+
+	return srv, nil
 }
