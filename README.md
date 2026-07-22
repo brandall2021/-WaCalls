@@ -41,6 +41,7 @@ enrutadas independientemente por ID de llamada.
 > Las sesiones persisten en **PostgreSQL**. Autenticación JWT para acceso protegido.
 > **Grabación server-side** WAV 16 kHz mono con descarga HTTP.
 > **Webhooks** con firma HMAC-SHA256 y reintentos.
+> **Puente SIP** para integración con central telefónica Asterisk.
 
 ---
 
@@ -69,6 +70,16 @@ enrutadas independientemente por ID de llamada.
 - Códec MLow nativo en Go puro (sin cgo)
 - Buffer de audio durante conexión del relay
 - Métricas de calidad en tiempo real (latencia, jitter, packet loss, bitrate)
+
+### 🏢 Puente SIP a Asterisk
+- Integración con central telefónica Asterisk via SIP/UDP
+- REGISTER automático con extensión y password
+- Llamadas salientes SIP: enviar llamada a cualquier extensión o trunk
+- Llamadas entrantes SIP: auto-answer con bridge a WhatsApp
+- Transcodificación de audio: PCM 16 kHz (WhatsApp) ↔ G.711 μ-law/A-law (SIP)
+- RTP bridge bidireccional en tiempo real
+- Configuración via flags o variables de entorno
+- Frontend: página SIP con status, llamadas activas,拨号
 
 ### 👥 Contactos
 - ABM completo de contactos (alta, baja, modificación)
@@ -113,7 +124,7 @@ enrutadas independientemente por ID de llamada.
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                    NAVEGADOR (React client)                              │
 │   mic + speaker · WebRTC data channel (16 kHz PCM) · HTTP + SSE         │
-│   + Contactos · Agenda · Notas (localStorage)                           │
+│   + Contactos · Agenda · Notas · Recordings · Webhooks · SIP (localStorage)
 │   + Auth (JWT token en localStorage)                                    │
 └───────────────────────────────┬──────────────────────────────────────────┘
                                 │  Authorization: Bearer <token>
@@ -128,10 +139,13 @@ enrutadas independientemente por ID de llamada.
 │  RecordingStore  grabaciones WAV en PostgreSQL + disco                  │
 │  WebhookStore    configs de webhooks por sesión                         │
 │  WebhookDispatcher  envío async con HMAC-SHA256 + reintentos            │
+│  SIPBridge       puente SIP a Asterisk (REGISTER, INVITE, BYE)          │
+│  SIPUA           User Agent SIP con RTP y transcoción G.711            │
 │                                                                           │
 │  internal/wa     adaptador VoipSocket sobre whatsmeow                   │
 │  internal/voip   call · signaling · media · transport · core · wanode   │
 │  internal/recording  WAV writer (16 kHz mono PCM) + Recorder           │
+│  internal/sip    SIP UA · RTP · codecs G.711 · AudioBridge             │
 └───────┬──────────────────────────────────────────────────┬──────────────┘
         │ señalización <call> (Signal/USync)               │ SRTP media
         ▼                                                   ▼
@@ -146,13 +160,25 @@ enrutadas independientemente por ID de llamada.
 │  users · sessions · recordings · webhook_configs      │
 │  webhook_deliveries · whatsmeow_*                     │
 └───────────────────────────────────────────────────────┘
+
+┌───────────────┐    SIP/UDP    ┌───────────────┐
+│  WaCalls SIP  │◄─────────────▶│   Asterisk    │
+│  (ext 100)    │    G.711      │    (PBX)      │
+└───────────────┘    RTP        └───────┬───────┘
+                                       │
+                         ┌─────────────┼─────────────┐
+                         │             │             │
+                    ┌────▼────┐  ┌─────▼────┐  ┌─────▼─────┐
+                    │ Ext 101 │  │ Ext 102  │  │ SIP Trunk │
+                    │ Agente  │  │ Agente   │  │  (PSTN)   │
+                    └─────────┘  └──────────┘  └───────────┘
 ```
 
 ### Estructura de archivos
 
 | Ruta | Responsabilidad |
 |---|---|
-| `cmd/server` | Broker HTTP/SSE, gestor de sesiones, puente WebRTC, auth JWT, grabación, webhooks |
+| `cmd/server` | Broker HTTP/SSE, gestor de sesiones, puente WebRTC, auth JWT, grabación, webhooks, SIP config |
 | `internal/wa` | `VoipSocket` — envía/recibe stanzas `<call>` vía whatsmeow |
 | `internal/voip/core` | Tipos de dominio, constantes, interfaz `VoipSocket` |
 | `internal/voip/wanode` | Helpers compartidos de nodo WhatsApp y JID |
@@ -161,6 +187,7 @@ enrutadas independientemente por ID de llamada.
 | `internal/voip/signaling` | Build/parse de stanzas `<call>`, crypto de claves de llamada |
 | `internal/voip/call` | `CallManager` — orquesta una llamada de principio a fin |
 | `internal/recording` | WAV writer (16 kHz mono PCM) + `Recorder` struct |
+| `internal/sip` | SIP UA (REGISTER/INVITE/BYE), RTP session, codecs G.711, AudioBridge WhatsApp↔SIP |
 | `client/` | React 19 + Vite + Tailwind v4 + shadcn/ui |
 
 ### Stores del cliente (Zustand + localStorage)
@@ -185,29 +212,58 @@ principio a fin. Secuencia de llamada saliente:
 
 ```
 1. POST .../calls            → CallManager.StartCall(peerJid)
-                               genera un callID, construye la oferta <call>, la envía
+                                genera un callID, construye la oferta <call>, la envía
 
 2. Navegador abre WebRTC     → POST .../calls/{id}/webrtc (oferta SDP)
-                               el puente responde con una respuesta SDP (pion)
+                                el puente responde con una respuesta SDP (pion)
 
 3. Par acepta               → events.CallAccept → HandleCallAccept
-                               servidor recibe <relay> + claves hop-by-hop
+                                servidor recibe <relay> + claves hop-by-hop
 
 4. Transporte relay          → binding/allocate STUN en relés de WhatsApp
-                               ICE + DTLS + SCTP DataChannel conectan (pion)
+                                ICE + DTLS + SCTP DataChannel conectan (pion)
 
 5. SRTP fluyendo             → el estado pasa a ACTIVE
    ├── subida   (vos → par): PCM 16 kHz del navegador (data channel) → MLow encode → SRTP → relay
    └── bajada   (par → vos): relay → SRTP → MLow decode → PCM 16 kHz (data channel) → navegador
 
 6. Grabación server-side     → WAV 16 kHz mono → disco + tabla recordings
-                               webhook "recording.ready" al finalizar
+                                webhook "recording.ready" al finalizar
 
 7. Webhooks                  → call.started / call.ended / recording.ready
-                               HMAC-SHA256 + reintentos exponenciales
+                                HMAC-SHA256 + reintentos exponenciales
 
 8. Teardown                  → DELETE .../calls/{id} o events.CallTerminate
-                               CallManager.EndCall + limpieza del puente
+                                CallManager.EndCall + limpieza del puente
+```
+
+### Flujo del puente SIP
+
+Cuando se habilita el puente SIP con `-sip`, el servidor registra una extensión
+en Asterisk y puede recibir llamadas SIP entrantes o enviar llamadas SIP salientes:
+
+```
+WhatsApp (PCM 16kHz)              Asterisk (SIP/UDP)
+         │                                │
+         │  ┌─────────────────────────┐   │
+         └──┤ AudioBridge (wa → sip) ├───┘
+            │  PCM 16kHz → G.711 μ-law│
+            └─────────────────────────┘
+         │                                │
+         │  ┌─────────────────────────┐   │
+         └──┤ AudioBridge (sip → wa) ├───┘
+            │  G.711 μ-law → PCM 16kHz│
+            └─────────────────────────┘
+
+Llamada SIP entrante:
+  1. Asterisk envía INVITE → SIP UA auto-answer
+  2. AudioBridge conecta PCM WhatsApp ↔ RTP SIP
+  3. Usuario habla por WhatsApp ↔ destino SIP
+
+Llamada SIP saliente:
+  1. POST /api/sip/call { peer_uri: "sip:ext@host" }
+  2. SIP UA envía INVITE → Asterisk
+  3. AudioBridge conecta ↔ WhatsApp
 ```
 
 ---
@@ -236,6 +292,27 @@ docker compose up -d
 ```
 
 Esto levanta PostgreSQL y WaCalls conectado automáticamente. Abrí `http://localhost:8080`.
+
+### Con Puente SIP (Docker Compose)
+
+Para habilitar el puente SIP, agregá las variables de entorno en `docker-compose.yml`:
+
+```yaml
+services:
+  wacalls:
+    environment:
+      - SIP_ENABLED=true
+      - SIP_ADDR=192.168.1.100:5060
+      - SIP_EXT=100
+      - SIP_PASS=miclave
+      - SIP_DOMAIN=192.168.1.100
+```
+
+O usá flags en el comando:
+
+```bash
+wacalls -sip -sip-addr 192.168.1.100:5060 -sip-ext 100 -sip-pass miclave -sip-domain 192.168.1.100
+```
 
 ### Instalación manual
 
@@ -305,6 +382,11 @@ go run ./cmd/server -database-url "$DATABASE_URL" -static client/dist -addr :808
 | `-static` | `client/dist` | Directorio del cliente estático (opcional) |
 | `-debug` | `false` | Logging verboso (incluye el log interno de whatsmeow) |
 | `-max-calls-per-session` | `8` | Máximo de llamadas concurrentes por sesión (`0` = sin límite) |
+| `-sip` | `false` | Habilitar puente SIP a Asterisk |
+| `-sip-addr` | *(requerido si -sip)* | Dirección del servidor SIP `host:port` (o env `SIP_ADDR`) |
+| `-sip-ext` | *(requerido si -sip)* | Extensión SIP para REGISTER (o env `SIP_EXT`) |
+| `-sip-pass` | *(requerido si -sip)* | Password de la extensión SIP (o env `SIP_PASS`) |
+| `-sip-domain` | *(requerido si -sip)* | Dominio SIP (o env `SIP_DOMAIN`) |
 
 ### Variables de entorno
 
@@ -312,6 +394,11 @@ go run ./cmd/server -database-url "$DATABASE_URL" -static client/dist -addr :808
 |---|---|
 | `DATABASE_URL` | URL de conexión PostgreSQL (alternativa al flag `-database-url`) |
 | `JWT_SECRET` | Secreto para firmar tokens JWT (default: `wacalls-default-secret-change-me`) |
+| `SIP_ENABLED` | Habilitar puente SIP (alternativa al flag `-sip`) |
+| `SIP_ADDR` | Dirección del servidor SIP `host:port` (alternativa al flag `-sip-addr`) |
+| `SIP_EXT` | Extensión SIP para REGISTER (alternativa al flag `-sip-ext`) |
+| `SIP_PASS` | Password de la extensión SIP (alternativa al flag `-sip-pass`) |
+| `SIP_DOMAIN` | Dominio SIP (alternativa al flag `-sip-domain`) |
 
 ---
 
@@ -376,11 +463,32 @@ Todas las rutas requieren header `Authorization: Bearer <token>` o query param `
 | `X-Webhook-Event` | Tipo de evento |
 | `X-Webhook-ID` | ID único de la entrega |
 
+### Puente SIP (requiere habilitar `-sip` o `SIP_ENABLED=true`)
+
+| Método | Ruta | Propósito |
+|---|---|---|
+| `GET` | `/api/sip/status` | Estado del bridge, extensiones SIP activas, llamadas SIP activas |
+| `POST` | `/api/sip/call` | Iniciar llamada SIP (`{ peer_uri: "sip:ext@host" }`) |
+| `DELETE` | `/api/sip/call/{callID}` | Colgar llamada SIP |
+
+**Ejemplo de uso:**
+
+```bash
+# Registrar con extensión 100 en Asterisk
+curl -X POST http://localhost:8080/api/sip/call \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"peer_uri": "sip:101@192.168.1.100"}'
+
+# Ver status del bridge
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/sip/status
+```
+
 ---
 
 ## Navegación del cliente
 
-El cliente tiene 6 secciones accesibles desde la barra lateral:
+El cliente tiene 7 secciones accesibles desde la barra lateral:
 
 | Sección | Ícono | Descripción |
 |---|---|---|
@@ -388,6 +496,7 @@ El cliente tiene 6 secciones accesibles desde la barra lateral:
 | **Contacts** | 👥 | ABM de contactos con favoritos y búsqueda |
 | **Recordings** | 🎙️ | Lista de grabaciones WAV con descarga |
 | **Webhooks** | 🔔 | Configurar URLs de webhook y gestionar secrets |
+| **SIP Bridge** | 🏢 | Puente a Asterisk: status, llamadas SIP activas |
 | **Schedule** | 📅 | Agenda de llamadas programadas |
 | **Notes** | 📝 | Historial de notas con rating y tags |
 
