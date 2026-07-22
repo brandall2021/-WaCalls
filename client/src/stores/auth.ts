@@ -18,6 +18,16 @@ interface AuthState {
 }
 
 const TOKEN_KEY = "wacalls.token";
+const FETCH_TIMEOUT_MS = 10000;
+
+const fetchWithTimeout = (url: string, init?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    console.error(`[AUTH] fetch timeout (${timeoutMs}ms): ${init?.method || "GET"} ${url}`);
+    controller.abort();
+  }, timeoutMs);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+};
 
 export const useAuth = create<AuthState>((set, get) => ({
   user: null,
@@ -27,7 +37,8 @@ export const useAuth = create<AuthState>((set, get) => ({
   login: async (email, password) => {
     set({ isLoading: true });
     try {
-      const res = await fetch("/api/auth/login", {
+      console.log(`[AUTH] login: ${email}`);
+      const res = await fetchWithTimeout("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -38,8 +49,10 @@ export const useAuth = create<AuthState>((set, get) => ({
       }
       const { user, token } = await res.json();
       localStorage.setItem(TOKEN_KEY, token);
+      console.log(`[AUTH] login OK, user=${user.email}`);
       set({ user, token, isLoading: false });
-    } catch (e) {
+    } catch (e: any) {
+      console.error(`[AUTH] login error:`, e);
       set({ isLoading: false });
       throw e;
     }
@@ -48,7 +61,7 @@ export const useAuth = create<AuthState>((set, get) => ({
   register: async (email, password, name) => {
     set({ isLoading: true });
     try {
-      const res = await fetch("/api/auth/register", {
+      const res = await fetchWithTimeout("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, name }),
@@ -67,26 +80,34 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
+    console.log(`[AUTH] logout`);
     localStorage.removeItem(TOKEN_KEY);
     set({ user: null, token: null });
   },
 
   checkAuth: async () => {
     const token = get().token;
-    if (!token) return;
+    if (!token) {
+      console.log(`[AUTH] checkAuth: no token, showing login`);
+      return;
+    }
     set({ isLoading: true });
     try {
-      const res = await fetch("/api/auth/me", {
+      console.log(`[AUTH] checkAuth: validating token...`);
+      const res = await fetchWithTimeout("/api/auth/me", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
+        console.warn(`[AUTH] checkAuth: token invalid (${res.status})`);
         localStorage.removeItem(TOKEN_KEY);
         set({ user: null, token: null, isLoading: false });
         return;
       }
       const user = await res.json();
+      console.log(`[AUTH] checkAuth: OK, user=${user.email}`);
       set({ user, isLoading: false });
-    } catch {
+    } catch (e: any) {
+      console.error(`[AUTH] checkAuth error:`, e?.message || e);
       localStorage.removeItem(TOKEN_KEY);
       set({ user: null, token: null, isLoading: false });
     }

@@ -8,6 +8,17 @@ export const setOnUnauthorized = (fn: () => void) => {
   onUnauthorized = fn;
 };
 
+const FETCH_TIMEOUT_MS = 10000;
+
+const fetchWithTimeout = (url: string, init?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    console.error(`[API] fetch timeout (${timeoutMs}ms): ${init?.method || "GET"} ${url}`);
+    controller.abort();
+  }, timeoutMs);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+};
+
 const baseHeaders = (): HeadersInit => {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -25,7 +36,8 @@ const handle401 = () => {
 };
 
 export const apiGet = async <T>(path: string): Promise<T> => {
-  const r = await fetch(path, { headers: baseHeaders() });
+  console.log(`[API] GET ${path}`);
+  const r = await fetchWithTimeout(path, { headers: baseHeaders() });
   if (r.status === 401) {
     handle401();
     throw new Error("unauthorized");
@@ -35,7 +47,8 @@ export const apiGet = async <T>(path: string): Promise<T> => {
 };
 
 export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
-  const r = await fetch(path, { method: "POST", headers: baseHeaders(), body: JSON.stringify(body) });
+  console.log(`[API] POST ${path}`);
+  const r = await fetchWithTimeout(path, { method: "POST", headers: baseHeaders(), body: JSON.stringify(body) });
   if (r.status === 401) {
     handle401();
     throw new Error("unauthorized");
@@ -48,7 +61,8 @@ export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
 };
 
 export const apiDelete = async (path: string): Promise<void> => {
-  const r = await fetch(path, { method: "DELETE", headers: baseHeaders() });
+  console.log(`[API] DELETE ${path}`);
+  const r = await fetchWithTimeout(path, { method: "DELETE", headers: baseHeaders() });
   if (r.status === 401) {
     handle401();
     throw new Error("unauthorized");
