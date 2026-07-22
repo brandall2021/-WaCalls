@@ -204,7 +204,9 @@ func (m *CallManager) RejectCall(ctx context.Context, callID string, reason core
 	m.emitState()
 	m.mu.Unlock()
 
-	go func() { _, _ = m.sock.Query(ctx, node) }()
+	tctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() { _, _ = m.sock.Query(tctx, node) }()
 	m.cleanupMedia()
 	return nil
 }
@@ -222,7 +224,9 @@ func (m *CallManager) EndCall(ctx context.Context, reason core.EndCallReason) er
 	m.emitState()
 	m.mu.Unlock()
 
-	go func() { _, _ = m.sock.Query(ctx, node) }()
+	tctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() { _, _ = m.sock.Query(tctx, node) }()
 	if m.OnEnded != nil {
 		m.OnEnded(ended)
 	}

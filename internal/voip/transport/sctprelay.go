@@ -420,7 +420,16 @@ func (m *SctpRelayManager) teardown(conn *relayConnection) {
 		_ = conn.channel.Close()
 	}
 	if conn.pc != nil {
-		_ = conn.pc.Close()
+		done := make(chan struct{})
+		go func() {
+			_ = conn.pc.Close()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			m.log.Warn("relay pc.Close timed out, forcing", "id", conn.id)
+		}
 	}
 }
 

@@ -27,8 +27,11 @@ func (m *CallManager) onRelayConnected() {
 		m.mu.Unlock()
 		return
 	}
-	m.log.Info("onRelayConnected fired", "call_id", call.CallID, "state", string(call.StateData.State))
-	if call.StateData.State == core.CallStateConnecting {
+	m.log.Info("onRelayConnected fired", "call_id", call.CallID, "state", string(call.StateData.State),
+		"relay_connected", m.relay.HasConnection(), "connected_count", m.relay.ConnectedCount())
+
+	switch call.StateData.State {
+	case core.CallStateConnecting:
 		if err := call.ApplyTransition(Transition{Type: TransitionMediaConnected}); err == nil {
 			m.emitState()
 			m.startSilenceKeepaliveLocked()
@@ -36,8 +39,10 @@ func (m *CallManager) onRelayConnected() {
 		} else {
 			m.log.Warn("relay connected but transition failed", "call_id", call.CallID, "err", err)
 		}
-	} else {
-		m.log.Warn("onRelayConnected: call state is not connecting", "call_id", call.CallID, "state", string(call.StateData.State))
+	case core.CallStateRinging, core.CallStateIncomingRinging:
+		m.log.Info("onRelayConnected: relay ready during ringing, waiting for accept", "call_id", call.CallID)
+	default:
+		m.log.Warn("onRelayConnected: unexpected state", "call_id", call.CallID, "state", string(call.StateData.State))
 	}
 	m.mu.Unlock()
 }
@@ -107,7 +112,7 @@ func (m *CallManager) cleanupMedia() {
 	m.totalRelayRecv = 0
 	m.mu.Unlock()
 
-	m.relay.Cleanup()
+	go m.relay.Cleanup()
 	if codec != nil {
 		codec.Close()
 	}

@@ -365,13 +365,15 @@ func (s *server) doReject(sess *Session, w http.ResponseWriter, r *http.Request)
 	ac, ok := sess.reg.get(id)
 	sess.removeCall(id)
 	s.broker.endCall(id, string(core.EndCallReasonDeclined))
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+
 	if ok {
-		go func() {
-			_ = ac.cm.RejectCall(context.Background(), id, core.EndCallReasonDeclined)
-		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		_ = ac.cm.RejectCall(ctx, id, core.EndCallReasonDeclined)
 	}
 	s.log.Info("doReject: call rejected", "call_id", id)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *server) doEndCall(sess *Session, w http.ResponseWriter, r *http.Request) {
@@ -386,14 +388,15 @@ func (s *server) doEndCall(sess *Session, w http.ResponseWriter, r *http.Request
 	sess.removeCall(id)
 	s.broker.endCall(id, string(core.EndCallReasonUserEnded))
 
+	w.WriteHeader(http.StatusNoContent)
+
 	if ok {
-		go func() {
-			_ = ac.cm.EndCall(context.Background(), core.EndCallReasonUserEnded)
-		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		_ = ac.cm.EndCall(ctx, core.EndCallReasonUserEnded)
 	}
 
 	s.log.Info("doEndCall: cleanup done", "call_id", id)
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func normalizePhone(p string) string {
