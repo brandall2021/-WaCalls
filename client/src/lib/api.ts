@@ -64,10 +64,18 @@ export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
 
 export const apiDelete = async (path: string): Promise<void> => {
   console.log(`[API] DELETE ${path}`);
-  const r = await fetchWithTimeout(path, { method: "DELETE", headers: baseHeaders() });
-  if (r.status === 401) {
-    handle401();
-    throw new Error("unauthorized");
+  try {
+    const r = await fetchWithTimeout(path, { method: "DELETE", headers: baseHeaders() }, 30000);
+    if (r.status === 401) {
+      handle401();
+      throw new Error("unauthorized");
+    }
+    if (!r.ok) throw new Error(`${path} ${r.status}`);
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      console.warn(`[API] DELETE timed out (server may be cleaning up): ${path}`);
+      return;
+    }
+    throw e;
   }
-  if (!r.ok) throw new Error(`${path} ${r.status}`);
 };
