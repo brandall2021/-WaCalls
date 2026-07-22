@@ -25,7 +25,7 @@ services:
       - "8080:8080"
     environment:
       - TZ=America/Argentina/Buenos_Aires
-      - DATABASE_URL=postgresql://brandall:Hansol1974%2B@postgres:5432/wacall?schema=public
+      - DATABASE_URL=postgresql://brandall:Hansol1974%2B@postgres:5432/wacall?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
