@@ -71,13 +71,6 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 	}
 	cm.OnStateChange = func(c *call.CallInfo) {
 		if c.IsEnded() {
-			s.stopRecording(c.CallID)
-			s.removeCall(c.CallID)
-			s.mgr.broker.endCall(c.CallID, string(c.StateData.EndReason))
-			s.mgr.webhookDisp.Dispatch(s.id, WebhookEvent{
-				Type: "call.ended", SessionID: s.id, Timestamp: time.Now().UnixMilli(),
-				Data: map[string]any{"call_id": c.CallID, "reason": string(c.StateData.EndReason)},
-			})
 			return
 		}
 		dir := "outbound"

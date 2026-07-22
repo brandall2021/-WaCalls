@@ -64,7 +64,7 @@ func NewBroker() *Broker {
 }
 
 func (b *Broker) subscribe(clientID string) *subscriber {
-	s := &subscriber{clientID: clientID, ch: make(chan []byte, 32)}
+	s := &subscriber{clientID: clientID, ch: make(chan []byte, 128)}
 	b.mu.Lock()
 	b.subs[s] = struct{}{}
 	b.mu.Unlock()
@@ -177,9 +177,22 @@ func (b *Broker) endCall(id, reason string) {
 	sessionID := c.SessionID
 	b.mu.Unlock()
 
-	b.broadcast(map[string]any{
+	data, err := json.Marshal(map[string]any{
 		"type": "call-ended", "sessionId": sessionID, "id": id, "owner": owner, "reason": reason, "endedAt": now,
 	})
+	if err == nil {
+		b.mu.RLock()
+		for s := range b.subs {
+			select {
+			case s.ch <- data:
+			default:
+				go func(sub *subscriber) {
+					sub.ch <- data
+				}(s)
+			}
+		}
+		b.mu.RUnlock()
+	}
 	b.broadcastCallList()
 }
 

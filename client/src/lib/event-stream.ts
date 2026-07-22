@@ -29,9 +29,12 @@ type Listener = (ev: BrokerEvent) => void;
 class EventStream {
   #es: EventSource | null = null;
   #listeners = new Set<Listener>();
+  #clientId: string = "";
+  #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   connect(clientId: string): void {
     if (this.#es) return;
+    this.#clientId = clientId;
     const token = getAuthToken();
     const params = new URLSearchParams({ clientId });
     if (token) params.set("token", token);
@@ -42,7 +45,17 @@ class EventStream {
         for (const l of this.#listeners) l(parsed);
       } catch {}
     };
-    this.#es.onerror = () => {};
+    this.#es.onerror = () => {
+      this.#es?.close();
+      this.#es = null;
+      if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
+      this.#reconnectTimer = setTimeout(() => {
+        this.#reconnectTimer = null;
+        if (!this.#es && this.#clientId) {
+          this.connect(this.#clientId);
+        }
+      }, 2000);
+    };
   }
 
   on(l: Listener): () => void {
@@ -51,8 +64,13 @@ class EventStream {
   }
 
   close(): void {
+    if (this.#reconnectTimer) {
+      clearTimeout(this.#reconnectTimer);
+      this.#reconnectTimer = null;
+    }
     this.#es?.close();
     this.#es = null;
+    this.#clientId = "";
   }
 }
 

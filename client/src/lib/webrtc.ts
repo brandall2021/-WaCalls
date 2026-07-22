@@ -71,11 +71,11 @@ export const openCall = async (
     sendBuffer();
   };
   micSource.connect(captureNode);
-  captureNode.connect(ctx.destination);
 
   const playbackNode = new AudioWorkletNode(ctx, PLAYBACK_PROCESSOR_NAME);
   const streamDest = ctx.createMediaStreamDestination();
   playbackNode.connect(streamDest);
+  playbackNode.connect(ctx.destination);
   dc.onmessage = (e: MessageEvent<ArrayBuffer>) => {
     playbackNode.port.postMessage(int16LEToFloat32(e.data));
   };
