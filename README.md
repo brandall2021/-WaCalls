@@ -38,7 +38,7 @@ enrutadas independientemente por ID de llamada.
 
 > **Estado:** estable. Llamadas salientes y entrantes 1:1 alcanzan `ACTIVE` con audio
 > bidireccional, y una sola cuenta puede mantener varias de ellas concurrentemente.
-> Las sesiones persisten en `wacalls.db` (SQLite en Go puro).
+> Las sesiones persisten en **PostgreSQL**. Autenticación JWT para acceso protegido.
 
 ---
 
@@ -112,31 +112,41 @@ enrutadas independientemente por ID de llamada.
 │                    NAVEGADOR (React client)                              │
 │   mic + speaker · WebRTC data channel (16 kHz PCM) · HTTP + SSE         │
 │   + Grabación · Contactos · Agenda · Notas (localStorage)               │
+│   + Auth (JWT token en localStorage)                                    │
 └───────────────────────────────┬──────────────────────────────────────────┘
+                                │  Authorization: Bearer <token>
                                 │  POST /api/sessions/{sid}/calls/{id}/webrtc
-                                │  GET  /api/events
+                                │  GET  /api/events?token=<token>
                                 ▼
 ┌────────────────────────── SERVIDOR GO (cmd/server) ──────────────────────┐
-│  SessionManager   registro de cuentas (client + CallManager + bridge)    │
-│  Broker           hub SSE (sesiones, auth, ciclo de vida de llamadas)    │
-│  Bridge           puente pion WebRTC (PCM 16 kHz ⇄ call core)          │
-│                                                                            │
-│  internal/wa      adaptador VoipSocket sobre whatsmeow                   │
-│  internal/voip    call · signaling · media · transport · core · wanode   │
-└───────────────┬──────────────────────────────────────┬───────────────────┘
-                │ señalización <call> (Signal/USync)    │ SRTP media
-                ▼                                       ▼
-        ┌───────────────┐                    ┌──────────────────────┐
-        │  WhatsApp WS  │                    │   Relé WhatsApp      │
-        │  (whatsmeow)  │                    │  (SRTP over SCTP/DC) │
-        └───────────────┘                    └──────────────────────┘
+│  AuthStore       registro/login, JWT, bcrypt password hashing           │
+│  SessionManager  registro de cuentas (client + CallManager + bridge)    │
+│  Broker          hub SSE (sesiones, auth, ciclo de vida de llamadas)    │
+│  Bridge          puente pion WebRTC (PCM 16 kHz ⇄ call core)          │
+│                                                                           │
+│  internal/wa     adaptador VoipSocket sobre whatsmeow                   │
+│  internal/voip   call · signaling · media · transport · core · wanode   │
+└───────┬──────────────────────────────────────────────────┬──────────────┘
+        │ señalización <call> (Signal/USync)               │ SRTP media
+        ▼                                                   ▼
+┌───────────────┐                                ┌──────────────────────┐
+│  WhatsApp WS  │                                │   Relé WhatsApp      │
+│  (whatsmeow)  │                                │  (SRTP over SCTP/DC) │
+└───────────────┘                                └──────────────────────┘
+        │
+        ▼
+┌───────────────┐
+│  PostgreSQL   │
+│  (users,      │
+│   sessions)   │
+└───────────────┘
 ```
 
 ### Estructura de archivos
 
 | Ruta | Responsabilidad |
 |---|---|
-| `cmd/server` | Broker HTTP/SSE, gestor de sesiones, puente WebRTC, ciclo de vida |
+| `cmd/server` | Broker HTTP/SSE, gestor de sesiones, puente WebRTC, ciclo de vida, auth JWT |
 | `internal/wa` | `VoipSocket` — envía/recibe stanzas `<call>` vía whatsmeow |
 | `internal/voip/core` | Tipos de dominio, constantes, interfaz `VoipSocket` |
 | `internal/voip/wanode` | Helpers compartidos de nodo WhatsApp y JID |
@@ -150,6 +160,7 @@ enrutadas independientemente por ID de llamada.
 
 | Store | Datos |
 |---|---|
+| `stores/auth.ts` | Autenticación JWT (login, registro, token) |
 | `stores/contacts.ts` | Contactos con CRUD, favoritos, búsqueda |
 | `stores/schedule.ts` | Llamadas programadas con estados |
 | `stores/callNotes.ts` | Notas por llamada con rating y tags |
@@ -202,6 +213,20 @@ puro vendoreado (`internal/voip/media/mlow`).
 
 ## Inicio rápido
 
+### Con Docker Compose (recomendado)
+
+```bash
+git clone <url-del-repo> wacalls
+cd wacalls
+
+# Levantar PostgreSQL + WaCalls
+docker compose up -d
+```
+
+Esto levanta PostgreSQL y WaCalls conectado automáticamente. Abrí `http://localhost:8080`.
+
+### Instalación manual
+
 ```bash
 # clonar y entrar al proyecto
 git clone <url-del-repo> wacalls
@@ -212,21 +237,28 @@ go mod download
 
 # dependencias del cliente React
 cd client && npm install && cd ..
+
+# configurar PostgreSQL
+export DATABASE_URL="postgresql://user:pass@localhost:5432/wacall"
+export JWT_SECRET="tu-secreto-seguro"
 ```
 
 ### Ejecutar
 
 ```bash
-go run ./cmd/server -addr :8080          # agregar -debug para logs verbosos
+go run ./cmd/server -database-url "$DATABASE_URL" -addr :8080
+# agregar -debug para logs verbosos
 ```
 
 El audio en vivo funciona directamente — el códec MLow es Go puro, así que una
 compilación simple lo incluye. Sin build tags, sin `CGO_ENABLED`, sin DLLs.
 
-Abrí `http://localhost:8080`, hacé clic en **New session** y escaneá el QR que
-aparece en el navegador (también se imprime en la terminal) con **WhatsApp →
-Dispositivos vinculados**. Agregá más cuentas de la misma forma y cambiá entre
-ellas en la barra lateral.
+### Primer uso
+
+1. Abrí `http://localhost:8080`
+2. **Registrate** con email y contraseña
+3. Creá una sesión de WhatsApp y escaneá el QR
+4. ¡Listo para llamadas!
 
 ### Cliente React en modo desarrollo
 
@@ -239,7 +271,7 @@ Para producción, compilá el cliente estático y servilo desde el servidor Go:
 
 ```bash
 cd client && npm run build && cd ..
-go run ./cmd/server -static client/dist -addr :8080
+go run ./cmd/server -database-url "$DATABASE_URL" -static client/dist -addr :8080
 ```
 
 ### Flags del servidor
@@ -247,17 +279,33 @@ go run ./cmd/server -static client/dist -addr :8080
 | Flag | Valor por defecto | Descripción |
 |---|---|---|
 | `-addr` | `:8080` | Dirección de escucha HTTP |
-| `-db` | `wacalls.db` | Ruta de la base de datos SQLite de sesiones |
+| `-database-url` | *(requerido)* | URL de conexión PostgreSQL (o env `DATABASE_URL`) |
 | `-static` | `client/dist` | Directorio del cliente estático (opcional) |
 | `-debug` | `false` | Logging verboso (incluye el log interno de whatsmeow) |
 | `-max-calls-per-session` | `8` | Máximo de llamadas concurrentes por sesión (`0` = sin límite) |
+
+### Variables de entorno
+
+| Variable | Descripción |
+|---|---|
+| `DATABASE_URL` | URL de conexión PostgreSQL (alternativa al flag `-database-url`) |
+| `JWT_SECRET` | Secreto para firmar tokens JWT (default: `wacalls-default-secret-change-me`) |
 
 ---
 
 ## API
 
-Todas las rutas están delimitadas por sesión. Los eventos se transmiten por un
-único canal SSE, etiquetados con el `sessionId` de origen.
+### Autenticación (rutas públicas)
+
+| Método | Ruta | Propósito |
+|---|---|---|
+| `POST` | `/api/auth/register` | Crear cuenta (`{ email, password, name }`) |
+| `POST` | `/api/auth/login` | Iniciar sesión (`{ email, password }`) |
+| `GET` | `/api/auth/me` | Obtener usuario actual (requiere `Authorization: Bearer <token>`) |
+
+### Sesiones y llamadas (requieren auth)
+
+Todas las rutas requieren header `Authorization: Bearer <token>` o query param `?token=<token>`.
 
 | Método | Ruta | Propósito |
 |---|---|---|
@@ -300,10 +348,25 @@ cd client && npm run build    # type-check del cliente + build de producción
 
 ## Seguridad
 
-La API **no tiene autenticación** — cualquiera con acceso HTTP puede crear cuentas,
-hacer llamadas y leer el historial. **Ejecutala solo en una red local de confianza.**
-`wacalls.db` contiene credenciales de sesión de WhatsApp (secretos): **no lo subas a
-un repositorio** y mantenlo protegido.
+La API usa **autenticación JWT** — todas las rutas `/api/*` (excepto login y registro)
+requieren un token válido en el header `Authorization: Bearer <token>` o como query
+parameter `?token=<token>`.
+
+### Configuración
+
+```bash
+# Variables de entorno (requeridas para producción)
+export DATABASE_URL="postgresql://user:pass@host:5432/wacall"
+export JWT_SECRET="tu-secreto-seguro-aqui"
+```
+
+**IMPORTANTE:** Cambiá el `JWT_SECRET` por defecto en producción. Los tokens duran 72 horas.
+
+### Base de datos
+
+- **PostgreSQL** almacena usuarios y sesiones de WhatsApp
+- Las credenciales de sesión de WhatsApp (secretos) se almacenan en las tablas `whatsmeow_*`
+- `wacalls.db` ya no se usa — los datos persisten en PostgreSQL
 
 ---
 
