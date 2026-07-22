@@ -48,8 +48,27 @@ export const openCall = async (
 
   const micSource = ctx.createMediaStreamSource(micStream);
   const captureNode = new AudioWorkletNode(ctx, CAPTURE_PROCESSOR_NAME);
+  let buffer: ArrayBuffer | null = null;
+  let canSend = true;
+
+  const sendBuffer = () => {
+    if (!canSend || !buffer || dc.readyState !== "open") return;
+    if (dc.bufferedAmount > 64 * 1024) {
+      canSend = false;
+      return;
+    }
+    dc.send(buffer);
+    buffer = null;
+  };
+
+  dc.onbufferedamountlow = () => {
+    canSend = true;
+    sendBuffer();
+  };
+
   captureNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
-    if (dc.readyState === "open") dc.send(float32ToInt16LE(e.data));
+    buffer = float32ToInt16LE(e.data);
+    sendBuffer();
   };
   micSource.connect(captureNode);
   captureNode.connect(ctx.destination);
