@@ -57,6 +57,9 @@ type SctpRelayManager struct {
 	audioSsrc        uint32
 	subscriptionSsrc uint32
 
+	selfPid *int
+	peerPid *int
+
 	onConnected func(ip string, port int)
 
 	onReceive func(data []byte)
@@ -75,6 +78,11 @@ func NewSctpRelayManager(log *slog.Logger) *SctpRelayManager {
 func (m *SctpRelayManager) SetSsrc(ssrc uint32) { m.audioSsrc = ssrc }
 
 func (m *SctpRelayManager) SetSubscriptionSsrc(ssrc uint32) { m.subscriptionSsrc = ssrc }
+
+func (m *SctpRelayManager) SetParticipantPIDs(selfPid, peerPid *int) {
+	m.selfPid = selfPid
+	m.peerPid = peerPid
+}
 
 func (m *SctpRelayManager) SetOnConnected(fn func(ip string, port int)) { m.onConnected = fn }
 
@@ -292,10 +300,18 @@ func (m *SctpRelayManager) sendStunRegistration(conn *relayConnection) {
 			if m.subscriptionSsrc != 0 {
 				peerSsrcs = []uint32{m.subscriptionSsrc}
 			}
-			ssrcList := BuildSSRCSubscriptionList([]uint32{m.audioSsrc}, peerSsrcs, 0, 0)
+			sPid, pPid := 0, 0
+			if m.selfPid != nil {
+				sPid = *m.selfPid
+			}
+			if m.peerPid != nil {
+				pPid = *m.peerPid
+			}
+			ssrcList := BuildSSRCSubscriptionList([]uint32{m.audioSsrc}, peerSsrcs, sPid, pPid)
 			m.sendRaw(conn, BuildAllocateForRelay(info.RawToken, ssrcList, hmacKey, info.IP, info.Port))
 			m.log.Info("sendStunRegistration: allocate+subscription sent", "id", conn.id,
-				"audio_ssrc", m.audioSsrc, "subscription_ssrc", m.subscriptionSsrc, "raw_token", len(info.RawToken))
+				"audio_ssrc", m.audioSsrc, "subscription_ssrc", m.subscriptionSsrc,
+				"self_pid", sPid, "peer_pid", pPid, "raw_token", len(info.RawToken))
 		} else {
 			m.log.Info("sendStunRegistration: STUN subscription sent (no raw token for allocate)", "id", conn.id,
 				"audio_ssrc", m.audioSsrc, "subscription_ssrc", m.subscriptionSsrc)

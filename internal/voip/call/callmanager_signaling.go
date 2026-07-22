@@ -128,6 +128,9 @@ func (m *CallManager) HandleCallAccept(ctx context.Context, node *waBinary.Node,
 	m.initSrtpKeysLocked()
 	hasConn := m.relay.HasConnection()
 	relayData := call.RelayData
+	if relayData != nil {
+		m.relay.SetParticipantPIDs(relayData.SelfPid, relayData.PeerPid)
+	}
 	m.mu.Unlock()
 
 	m.log.Info("remote accepted call", "call_id", call.CallID, "peer", peerJid.String(),
@@ -192,6 +195,9 @@ func (m *CallManager) HandleCallTransport(ctx context.Context, node *waBinary.No
 			call.RelayData = &core.RelayData{}
 		}
 		call.RelayData.Endpoints = relays
+		if call.RelayData.SelfPid != nil || call.RelayData.PeerPid != nil {
+			m.relay.SetParticipantPIDs(call.RelayData.SelfPid, call.RelayData.PeerPid)
+		}
 		m.mu.Unlock()
 		m.connectRelays(relays)
 	}
@@ -263,6 +269,7 @@ func (m *CallManager) HandleCallAck(ctx context.Context, node *waBinary.Node) {
 	}
 	endpoints := parsed.Relays
 	alreadyConnected := m.relay.HasConnection()
+	m.relay.SetParticipantPIDs(parsed.SelfPid, parsed.PeerPid)
 	m.mu.Unlock()
 
 	if sendPreaccept {
