@@ -46,6 +46,11 @@ func main() {
 	}
 	defer srv.sessions.disconnectAll()
 
+	if err := srv.auth.Seed(ctx); err != nil {
+		log.Error("seed failed", "err", err)
+	}
+	log.Info("seed complete")
+
 	if err := srv.sessions.Restore(ctx); err != nil {
 		log.Error("session restore failed", "err", err)
 		os.Exit(1)

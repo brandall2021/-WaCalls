@@ -120,3 +120,29 @@ func (a *authStore) GetUserByID(ctx context.Context, id string) (*User, error) {
 	}
 	return &u, err
 }
+
+var seedUsers = []struct {
+	email    string
+	password string
+	name     string
+}{
+	{"admin@wacalls.com", "admin123", "Administrador"},
+	{"operador@wacalls.com", "operador123", "Operador"},
+	{"demo@wacalls.com", "demo123", "Demo"},
+}
+
+func (a *authStore) Seed(ctx context.Context) error {
+	var count int
+	if err := a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	for _, u := range seedUsers {
+		if _, err := a.Register(ctx, u.email, u.password, u.name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
