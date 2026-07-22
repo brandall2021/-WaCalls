@@ -8,6 +8,7 @@ import { ContactsPage } from "@/pages/ContactsPage";
 import { SchedulePage } from "@/pages/SchedulePage";
 import { NotesPage } from "@/pages/NotesPage";
 import { RecordingsPage } from "@/pages/RecordingsPage";
+import { WebhooksPage } from "@/pages/WebhooksPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { SessionPairing } from "@/components/domain/session/SessionPairing";
 import { SessionHeader } from "@/components/domain/session/SessionHeader";
@@ -93,6 +94,7 @@ export const App = () => {
             )}
             {page === "contacts" && <ContactsPage />}
             {page === "recordings" && active && <RecordingsPage sid={active.id} />}
+            {page === "webhooks" && active && <WebhooksPage sid={active.id} />}
             {page === "schedule" && <SchedulePage />}
             {page === "notes" && <NotesPage />}
           </div>

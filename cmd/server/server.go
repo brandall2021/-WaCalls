@@ -46,6 +46,10 @@ func newServer(ctx context.Context, databaseURL, staticDir string, maxCalls int,
 	if err != nil {
 		return nil, err
 	}
+	whStore, err := newWebhookStore(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
@@ -62,7 +66,7 @@ func newServer(ctx context.Context, databaseURL, staticDir string, maxCalls int,
 	}
 
 	broker := NewBroker()
-	mgr := newSessionManager(ctx, container, broker, store, recStore, waLogger, log, maxCalls)
+	mgr := newSessionManager(ctx, container, broker, store, recStore, whStore, waLogger, log, maxCalls)
 	broker.SnapshotFn = mgr.snapshotEvents
 
 	return &server{broker: broker, sessions: mgr, auth: auth, log: log, staticDir: staticDir}, nil

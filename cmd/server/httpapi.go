@@ -34,6 +34,9 @@ func (s *server) routes() http.Handler {
 	api.HandleFunc("GET /api/sessions/{sid}/history", s.handleHistory)
 	api.HandleFunc("GET /api/sessions/{sid}/recordings", s.handleListRecordings)
 	api.HandleFunc("GET /api/recordings/{id}/download", s.handleDownloadRecording)
+	api.HandleFunc("GET /api/sessions/{sid}/webhooks", s.handleListWebhooks)
+	api.HandleFunc("POST /api/sessions/{sid}/webhooks", s.handleCreateWebhook)
+	api.HandleFunc("DELETE /api/sessions/{sid}/webhooks/{wid}", s.handleDeleteWebhook)
 	api.HandleFunc("GET /api/events", s.handleEvents)
 
 	mux.Handle("/api/", s.authMiddleware(api))
@@ -386,4 +389,61 @@ func (s *server) handleDownloadRecording(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "audio/wav")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.wav", rec.CallID))
 	http.ServeContent(w, r, rec.FilePath, time.Time{}, file)
+}
+
+func (s *server) handleListWebhooks(w http.ResponseWriter, r *http.Request) {
+	sess := s.sessionByID(w, r.PathValue("sid"))
+	if sess == nil {
+		return
+	}
+	webhooks, err := s.sessions.webhookStore.List(r.Context(), sess.id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, webhooks)
+}
+
+func (s *server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
+	sess := s.sessionByID(w, r.PathValue("sid"))
+	if sess == nil {
+		return
+	}
+	var body struct {
+		URL    string `json:"url"`
+		Events string `json:"events"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.URL == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url required"})
+		return
+	}
+	if body.Events == "" {
+		body.Events = "*"
+	}
+	cfg := &WebhookConfigRow{
+		ID:        newSessionID(),
+		SessionID: sess.id,
+		URL:       body.URL,
+		Events:    body.Events,
+		Secret:    generateSecret(),
+		Active:    true,
+	}
+	if err := s.sessions.webhookStore.Create(r.Context(), cfg); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+func (s *server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) {
+	sess := s.sessionByID(w, r.PathValue("sid"))
+	if sess == nil {
+		return
+	}
+	wid := r.PathValue("wid")
+	if err := s.sessions.webhookStore.Delete(r.Context(), wid); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -64,12 +64,20 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 			StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
 		})
 		s.mgr.broker.emitIncoming(s.id, c.CallID, c.PeerJid)
+		s.mgr.webhookDisp.Dispatch(s.id, WebhookEvent{
+			Type: "call.incoming", SessionID: s.id, Timestamp: time.Now().UnixMilli(),
+			Data: map[string]any{"call_id": c.CallID, "peer": c.PeerJid, "direction": "inbound"},
+		})
 	}
 	cm.OnStateChange = func(c *call.CallInfo) {
 		if c.IsEnded() {
 			s.stopRecording(c.CallID)
 			s.removeCall(c.CallID)
 			s.mgr.broker.endCall(c.CallID, string(c.StateData.EndReason))
+			s.mgr.webhookDisp.Dispatch(s.id, WebhookEvent{
+				Type: "call.ended", SessionID: s.id, Timestamp: time.Now().UnixMilli(),
+				Data: map[string]any{"call_id": c.CallID, "reason": string(c.StateData.EndReason)},
+			})
 			return
 		}
 		dir := "outbound"
@@ -89,12 +97,20 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 
 		if c.StateData.State == core.CallStateActive {
 			s.startRecording(c.CallID, c.PeerJid, dir)
+			s.mgr.webhookDisp.Dispatch(s.id, WebhookEvent{
+				Type: "call.started", SessionID: s.id, Timestamp: time.Now().UnixMilli(),
+				Data: map[string]any{"call_id": c.CallID, "peer": c.PeerJid, "direction": dir},
+			})
 		}
 	}
 	cm.OnEnded = func(c *call.CallInfo) {
 		s.stopRecording(c.CallID)
 		s.removeCall(c.CallID)
 		s.mgr.broker.endCall(c.CallID, string(c.StateData.EndReason))
+		s.mgr.webhookDisp.Dispatch(s.id, WebhookEvent{
+			Type: "call.ended", SessionID: s.id, Timestamp: time.Now().UnixMilli(),
+			Data: map[string]any{"call_id": c.CallID, "reason": string(c.StateData.EndReason)},
+		})
 	}
 	cm.OnPeerAudio = func(pcm16 []float32) {
 		ac, ok := s.reg.get(callID)
@@ -340,13 +356,18 @@ func (s *Session) stopRecording(callID string) {
 	s.log.Info("recording stopped", "call_id", callID, "duration", duration, "size", size)
 
 	if s.mgr.recordingStore != nil {
+		recID := newSessionID()
 		_ = s.mgr.recordingStore.Save(context.Background(), &RecordingRow{
-			ID:        newSessionID(),
+			ID:        recID,
 			SessionID: s.id,
 			CallID:    callID,
 			Duration:  duration.Milliseconds(),
 			FilePath:  ac.recordingPath,
 			FileSize:  size,
+		})
+		s.mgr.webhookDisp.Dispatch(s.id, WebhookEvent{
+			Type: "recording.ready", SessionID: s.id, Timestamp: time.Now().UnixMilli(),
+			Data: map[string]any{"recording_id": recID, "call_id": callID, "duration_ms": duration.Milliseconds(), "file_size": size},
 		})
 	}
 	ac.recorder = nil

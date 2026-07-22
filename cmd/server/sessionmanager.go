@@ -13,27 +13,31 @@ import (
 )
 
 type SessionManager struct {
-	appCtx        context.Context
-	container     *sqlstore.Container
-	broker        *Broker
-	store         *sessionStore
+	appCtx         context.Context
+	container      *sqlstore.Container
+	broker         *Broker
+	store          *sessionStore
 	recordingStore *recordingStore
-	waLogger      waLog.Logger
-	log           *slog.Logger
-	maxCalls      int
+	webhookStore   *webhookStore
+	webhookDisp    *WebhookDispatcher
+	waLogger       waLog.Logger
+	log            *slog.Logger
+	maxCalls       int
 
 	mu       sync.RWMutex
 	sessions map[string]*Session
 	order    []string
 }
 
-func newSessionManager(ctx context.Context, container *sqlstore.Container, broker *Broker, store *sessionStore, recStore *recordingStore, waLogger waLog.Logger, log *slog.Logger, maxCalls int) *SessionManager {
+func newSessionManager(ctx context.Context, container *sqlstore.Container, broker *Broker, store *sessionStore, recStore *recordingStore, whStore *webhookStore, waLogger waLog.Logger, log *slog.Logger, maxCalls int) *SessionManager {
 	return &SessionManager{
 		appCtx:         ctx,
 		container:      container,
 		broker:         broker,
 		store:          store,
 		recordingStore: recStore,
+		webhookStore:   whStore,
+		webhookDisp:    NewWebhookDispatcher(whStore, log),
 		waLogger:       waLogger,
 		log:            log,
 		maxCalls:       maxCalls,

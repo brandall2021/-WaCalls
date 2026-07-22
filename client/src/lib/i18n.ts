@@ -94,6 +94,10 @@ type TranslationKeys = {
   recordings: string;
   no_recordings: string;
   loading: string;
+  // Webhooks
+  webhooks_nav: string;
+  webhooks: string;
+  no_webhooks: string;
   // Footer
   accounts: string;
   theme: string;
@@ -183,6 +187,9 @@ const translations: Record<Locale, TranslationKeys> = {
     recordings: "Recordings",
     no_recordings: "No recordings yet",
     loading: "Loading...",
+    webhooks_nav: "Webhooks",
+    webhooks: "Webhooks",
+    no_webhooks: "No webhooks configured",
     accounts: "Accounts",
     theme: "Theme",
     language: "Language",
@@ -269,6 +276,9 @@ const translations: Record<Locale, TranslationKeys> = {
     recordings: "Grabaciones",
     no_recordings: "Sin grabaciones aún",
     loading: "Cargando...",
+    webhooks_nav: "Webhooks",
+    webhooks: "Webhooks",
+    no_webhooks: "Sin webhooks configurados",
     accounts: "Cuentas",
     theme: "Tema",
     language: "Idioma",
@@ -355,6 +365,9 @@ const translations: Record<Locale, TranslationKeys> = {
     recordings: "Gravações",
     no_recordings: "Nenhuma gravação ainda",
     loading: "Carregando...",
+    webhooks_nav: "Webhooks",
+    webhooks: "Webhooks",
+    no_webhooks: "Nenhum webhook configurado",
     accounts: "Contas",
     theme: "Tema",
     language: "Idioma",
