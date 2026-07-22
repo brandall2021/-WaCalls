@@ -7,6 +7,7 @@ import { CallsPage } from "@/pages/CallsPage";
 import { ContactsPage } from "@/pages/ContactsPage";
 import { SchedulePage } from "@/pages/SchedulePage";
 import { NotesPage } from "@/pages/NotesPage";
+import { RecordingsPage } from "@/pages/RecordingsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { SessionPairing } from "@/components/domain/session/SessionPairing";
 import { SessionHeader } from "@/components/domain/session/SessionHeader";
@@ -91,6 +92,7 @@ export const App = () => {
               active?.paired ? <CallsPage sid={active.id} /> : active ? <SessionPairing session={active} /> : null
             )}
             {page === "contacts" && <ContactsPage />}
+            {page === "recordings" && active && <RecordingsPage sid={active.id} />}
             {page === "schedule" && <SchedulePage />}
             {page === "notes" && <NotesPage />}
           </div>

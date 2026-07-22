@@ -89,6 +89,11 @@ type TranslationKeys = {
   call_notes_placeholder: string;
   tags_placeholder: string;
   no_notes: string;
+  // Recordings
+  recordings_nav: string;
+  recordings: string;
+  no_recordings: string;
+  loading: string;
   // Footer
   accounts: string;
   theme: string;
@@ -174,6 +179,10 @@ const translations: Record<Locale, TranslationKeys> = {
     call_notes_placeholder: "Write your notes about this call…",
     tags_placeholder: "Tags (comma separated)",
     no_notes: "No notes yet",
+    recordings_nav: "Recordings",
+    recordings: "Recordings",
+    no_recordings: "No recordings yet",
+    loading: "Loading...",
     accounts: "Accounts",
     theme: "Theme",
     language: "Language",
@@ -256,6 +265,10 @@ const translations: Record<Locale, TranslationKeys> = {
     call_notes_placeholder: "Escribí tus notas sobre esta llamada…",
     tags_placeholder: "Etiquetas (separadas por coma)",
     no_notes: "Sin notas aún",
+    recordings_nav: "Grabaciones",
+    recordings: "Grabaciones",
+    no_recordings: "Sin grabaciones aún",
+    loading: "Cargando...",
     accounts: "Cuentas",
     theme: "Tema",
     language: "Idioma",
@@ -338,6 +351,10 @@ const translations: Record<Locale, TranslationKeys> = {
     call_notes_placeholder: "Escreva suas notas sobre esta chamada…",
     tags_placeholder: "Tags (separadas por vírgula)",
     no_notes: "Nenhuma nota ainda",
+    recordings_nav: "Gravações",
+    recordings: "Gravações",
+    no_recordings: "Nenhuma gravação ainda",
+    loading: "Carregando...",
     accounts: "Contas",
     theme: "Tema",
     language: "Idioma",

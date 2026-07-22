@@ -20,7 +20,9 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /wacalls ./cmd/server
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+RUN mkdir -p /data/recordings
 COPY --from=server /wacalls /usr/local/bin/wacalls
 COPY --from=server /app/client/dist ./client/dist
+VOLUME /data/recordings
 EXPOSE 8080
 ENTRYPOINT ["wacalls", "-addr", ":8080", "-static", "/app/client/dist"]

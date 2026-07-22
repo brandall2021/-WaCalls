@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -31,6 +32,8 @@ func (s *server) routes() http.Handler {
 	api.HandleFunc("POST /api/sessions/{sid}/calls/{id}/reject", s.handleReject)
 	api.HandleFunc("DELETE /api/sessions/{sid}/calls/{id}", s.handleEndCall)
 	api.HandleFunc("GET /api/sessions/{sid}/history", s.handleHistory)
+	api.HandleFunc("GET /api/sessions/{sid}/recordings", s.handleListRecordings)
+	api.HandleFunc("GET /api/recordings/{id}/download", s.handleDownloadRecording)
 	api.HandleFunc("GET /api/events", s.handleEvents)
 
 	mux.Handle("/api/", s.authMiddleware(api))
@@ -285,6 +288,9 @@ func (s *server) doWebRTC(sess *Session, w http.ResponseWriter, r *http.Request)
 	}
 
 	bridge.OnBrowserPCM = func(pcm []float32) {
+		if ac.recorder != nil {
+			ac.recorder.WritePCM(pcm)
+		}
 		ac.cm.FeedCapturedPCM(pcm)
 	}
 	bridge.OnTerminalICE = func() {
@@ -349,4 +355,35 @@ func normalizePhone(p string) string {
 		}
 	}
 	return b.String()
+}
+
+func (s *server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
+	sess := s.sessionByID(w, r.PathValue("sid"))
+	if sess == nil {
+		return
+	}
+	recordings, err := s.sessions.recordingStore.List(r.Context(), sess.id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, recordings)
+}
+
+func (s *server) handleDownloadRecording(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	rec, err := s.sessions.recordingStore.Get(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "recording not found"})
+		return
+	}
+	file, err := os.Open(rec.FilePath)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found"})
+		return
+	}
+	defer file.Close()
+	w.Header().Set("Content-Type", "audio/wav")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.wav", rec.CallID))
+	http.ServeContent(w, r, rec.FilePath, time.Time{}, file)
 }

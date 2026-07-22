@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"wacalls/internal/voip/signaling"
 	"wacalls/internal/voip/wanode"
 	"wacalls/internal/wa"
+	"wacalls/internal/recording"
 
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
@@ -64,6 +67,7 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 	}
 	cm.OnStateChange = func(c *call.CallInfo) {
 		if c.IsEnded() {
+			s.stopRecording(c.CallID)
 			s.removeCall(c.CallID)
 			s.mgr.broker.endCall(c.CallID, string(c.StateData.EndReason))
 			return
@@ -82,17 +86,27 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 			rec.StartedAt = existing.StartedAt
 		}
 		s.mgr.broker.upsertCall(rec)
+
+		if c.StateData.State == core.CallStateActive {
+			s.startRecording(c.CallID, c.PeerJid, dir)
+		}
 	}
 	cm.OnEnded = func(c *call.CallInfo) {
+		s.stopRecording(c.CallID)
 		s.removeCall(c.CallID)
 		s.mgr.broker.endCall(c.CallID, string(c.StateData.EndReason))
 	}
 	cm.OnPeerAudio = func(pcm16 []float32) {
 		ac, ok := s.reg.get(callID)
-		if !ok || ac.bridge == nil {
+		if !ok {
 			return
 		}
-		_ = ac.bridge.WritePCM(pcm16)
+		if ac.recorder != nil {
+			ac.recorder.WritePCM(pcm16)
+		}
+		if ac.bridge != nil {
+			_ = ac.bridge.WritePCM(pcm16)
+		}
 	}
 }
 
@@ -289,4 +303,51 @@ func mapStatus(state core.CallState) CallStatus {
 	default:
 		return StatusRinging
 	}
+}
+
+func (s *Session) startRecording(callID, peer, direction string) {
+	ac, ok := s.reg.get(callID)
+	if !ok || ac.recorder != nil {
+		return
+	}
+	dir := "out"
+	if direction == "inbound" {
+		dir = "in"
+	}
+	fileName := fmt.Sprintf("%s_%s_%s_%s.wav", s.id, callID, dir, time.Now().Format("20060102_150405"))
+	filePath := filepath.Join("/data/recordings", fileName)
+	os.MkdirAll(filepath.Dir(filePath), 0755)
+	rec, err := recording.New(filePath)
+	if err != nil {
+		s.log.Error("failed to start recording", "err", err)
+		return
+	}
+	ac.recorder = rec
+	ac.recordingPath = filePath
+	s.log.Info("recording started", "call_id", callID, "file", filePath)
+}
+
+func (s *Session) stopRecording(callID string) {
+	ac, ok := s.reg.get(callID)
+	if !ok || ac.recorder == nil {
+		return
+	}
+	duration, size, err := ac.recorder.Stop()
+	if err != nil {
+		s.log.Error("failed to stop recording", "err", err)
+		return
+	}
+	s.log.Info("recording stopped", "call_id", callID, "duration", duration, "size", size)
+
+	if s.mgr.recordingStore != nil {
+		_ = s.mgr.recordingStore.Save(context.Background(), &RecordingRow{
+			ID:        newSessionID(),
+			SessionID: s.id,
+			CallID:    callID,
+			Duration:  duration.Milliseconds(),
+			FilePath:  ac.recordingPath,
+			FileSize:  size,
+		})
+	}
+	ac.recorder = nil
 }
