@@ -69,7 +69,7 @@ func (a *authStore) Login(ctx context.Context, email, password string) (*User, e
 	var u User
 	var hash string
 	err := a.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, name, EXTRACT(EPOCH FROM created_at)*1000 FROM users WHERE email = $1`, email,
+		`SELECT id, email, password_hash, name, CAST(EXTRACT(EPOCH FROM created_at)*1000 AS BIGINT) FROM users WHERE email = $1`, email,
 	).Scan(&u.ID, &u.Email, &hash, &u.Name, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidCredentials
@@ -113,7 +113,7 @@ func (a *authStore) ValidateToken(tokenStr string) (*Claims, error) {
 func (a *authStore) GetUserByID(ctx context.Context, id string) (*User, error) {
 	var u User
 	err := a.db.QueryRowContext(ctx,
-		`SELECT id, email, name, EXTRACT(EPOCH FROM created_at)*1000 FROM users WHERE id = $1`, id,
+		`SELECT id, email, name, CAST(EXTRACT(EPOCH FROM created_at)*1000 AS BIGINT) FROM users WHERE id = $1`, id,
 	).Scan(&u.ID, &u.Email, &u.Name, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
