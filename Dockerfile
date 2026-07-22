@@ -12,6 +12,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+RUN go mod tidy
 COPY --from=client /app/client/dist ./client/dist
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /wacalls ./cmd/server
 
