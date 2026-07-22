@@ -15,6 +15,7 @@ type TranslationKeys = {
   scan_qr: string;
   scan_qr_desc: string;
   linked: string;
+  connected: string;
   connecting: string;
   logout: string;
   // Calls
@@ -100,6 +101,15 @@ type TranslationKeys = {
   no_webhooks: string;
   // SIP
   sip_nav: string;
+  // Dashboard
+  dashboard_nav: string;
+  dashboard: string;
+  sessions: string;
+  total: string;
+  storage: string;
+  configs: string;
+  delivered: string;
+  failed: string;
   // Footer
   accounts: string;
   theme: string;
@@ -118,6 +128,7 @@ const translations: Record<Locale, TranslationKeys> = {
     scan_qr: "Scan QR code",
     scan_qr_desc: "Open WhatsApp on your phone, go to Linked Devices and scan this code.",
     linked: "Linked",
+    connected: "Connected",
     connecting: "Connecting…",
     logout: "Log out",
     calls_nav: "Calls",
@@ -193,6 +204,14 @@ const translations: Record<Locale, TranslationKeys> = {
     webhooks: "Webhooks",
     no_webhooks: "No webhooks configured",
     sip_nav: "SIP Bridge",
+    dashboard_nav: "Dashboard",
+    dashboard: "Dashboard",
+    sessions: "Sessions",
+    total: "total",
+    storage: "Storage",
+    configs: "configs",
+    delivered: "delivered",
+    failed: "failed",
     accounts: "Accounts",
     theme: "Theme",
     language: "Language",
@@ -208,6 +227,7 @@ const translations: Record<Locale, TranslationKeys> = {
     scan_qr: "Escaneá el código QR",
     scan_qr_desc: "Abrí WhatsApp en tu celular, andá a Dispositivos vinculados y escaneá este código.",
     linked: "Vinculado",
+    connected: "Conectado",
     connecting: "Conectando…",
     logout: "Cerrar sesión",
     calls_nav: "Llamadas",
@@ -283,6 +303,14 @@ const translations: Record<Locale, TranslationKeys> = {
     webhooks: "Webhooks",
     no_webhooks: "Sin webhooks configurados",
     sip_nav: "Puente SIP",
+    dashboard_nav: "Panel",
+    dashboard: "Panel",
+    sessions: "Sesiones",
+    total: "total",
+    storage: "Almacenamiento",
+    configs: "configs",
+    delivered: "entregados",
+    failed: "fallidos",
     accounts: "Cuentas",
     theme: "Tema",
     language: "Idioma",
@@ -298,6 +326,7 @@ const translations: Record<Locale, TranslationKeys> = {
     scan_qr: "Escaneie o código QR",
     scan_qr_desc: "Abra o WhatsApp no celular, vá para Dispositivos vinculados e escaneie este código.",
     linked: "Vinculado",
+    connected: "Conectado",
     connecting: "Conectando…",
     logout: "Sair",
     calls_nav: "Chamadas",
@@ -373,6 +402,14 @@ const translations: Record<Locale, TranslationKeys> = {
     webhooks: "Webhooks",
     no_webhooks: "Nenhum webhook configurado",
     sip_nav: "Ponte SIP",
+    dashboard_nav: "Painel",
+    dashboard: "Painel",
+    sessions: "Sessões",
+    total: "total",
+    storage: "Armazenamento",
+    configs: "configs",
+    delivered: "entregues",
+    failed: "falhos",
     accounts: "Contas",
     theme: "Tema",
     language: "Idioma",

@@ -11,6 +11,7 @@ import { RecordingsPage } from "@/pages/RecordingsPage";
 import { WebhooksPage } from "@/pages/WebhooksPage";
 import { SIPPage } from "@/pages/SIPPage";
 import { LoginPage } from "@/pages/LoginPage";
+import { DashboardPage } from "@/pages/DashboardPage";
 import { SessionPairing } from "@/components/domain/session/SessionPairing";
 import { SessionHeader } from "@/components/domain/session/SessionHeader";
 import { IncomingCallModal } from "@/components/domain/call/IncomingCallModal";
@@ -31,7 +32,7 @@ export const App = () => {
   const activeId = useSessions((s) => s.activeId);
   const theme = useTheme((s) => s.theme);
   const { t, locale, setLocale } = useI18n();
-  const [page, setPage] = useState<PageId>("calls");
+  const [page, setPage] = useState<PageId>("dashboard");
 
   useEffect(() => {
     setOnUnauthorized(() => useAuth.getState().logout());
@@ -92,6 +93,7 @@ export const App = () => {
                 </div>
               </div>
             )}
+            {page === "dashboard" && <DashboardPage />}
             {page === "calls" && (
               active?.paired ? <CallsPage sid={active.id} /> : active ? <SessionPairing session={active} /> : null
             )}

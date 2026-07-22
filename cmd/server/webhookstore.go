@@ -74,7 +74,7 @@ func (s *webhookStore) List(ctx context.Context, sessionID string) ([]WebhookCon
 		return nil, err
 	}
 	defer rows.Close()
-	var out []WebhookConfigRow
+	out := make([]WebhookConfigRow, 0)
 	for rows.Next() {
 		var r WebhookConfigRow
 		if err := rows.Scan(&r.ID, &r.SessionID, &r.URL, &r.Events, &r.Secret, &r.Active); err != nil {
@@ -111,7 +111,7 @@ func (s *webhookStore) ListActive(ctx context.Context, sessionID string) ([]Webh
 		return nil, err
 	}
 	defer rows.Close()
-	var out []WebhookConfigRow
+	out := make([]WebhookConfigRow, 0)
 	for rows.Next() {
 		var r WebhookConfigRow
 		if err := rows.Scan(&r.ID, &r.SessionID, &r.URL, &r.Events, &r.Secret, &r.Active); err != nil {

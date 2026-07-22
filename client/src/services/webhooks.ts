@@ -10,7 +10,7 @@ export interface WebhookConfig {
 }
 
 export const listWebhooks = (sid: string) =>
-  apiGet<WebhookConfig[]>(`/api/sessions/${sid}/webhooks`);
+  apiGet<WebhookConfig[]>(`/api/sessions/${sid}/webhooks`).then((r) => r ?? []);
 
 export const createWebhook = (sid: string, url: string, events: string) =>
   apiPost<WebhookConfig>(`/api/sessions/${sid}/webhooks`, { url, events });

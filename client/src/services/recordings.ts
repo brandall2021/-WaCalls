@@ -10,7 +10,7 @@ export interface Recording {
 }
 
 export const listRecordings = (sid: string) =>
-  apiGet<Recording[]>(`/api/sessions/${sid}/recordings`);
+  apiGet<Recording[]>(`/api/sessions/${sid}/recordings`).then((r) => r ?? []);
 
 export const downloadRecordingUrl = (id: string) =>
   `/api/recordings/${id}/download`;

@@ -39,7 +39,7 @@ func (s *sessionStore) list(ctx context.Context) ([]sessionRow, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []sessionRow
+	out := make([]sessionRow, 0)
 	for rows.Next() {
 		var r sessionRow
 		if err := rows.Scan(&r.ID, &r.Name, &r.JID); err != nil {

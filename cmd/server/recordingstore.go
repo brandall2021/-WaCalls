@@ -56,7 +56,7 @@ func (s *recordingStore) List(ctx context.Context, sessionID string) ([]Recordin
 		return nil, err
 	}
 	defer rows.Close()
-	var out []RecordingRow
+	out := make([]RecordingRow, 0)
 	for rows.Next() {
 		var r RecordingRow
 		if err := rows.Scan(&r.ID, &r.SessionID, &r.CallID, &r.Duration, &r.FilePath, &r.FileSize); err != nil {

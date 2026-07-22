@@ -40,6 +40,7 @@ func (s *server) routes() http.Handler {
 	api.HandleFunc("GET /api/sip/status", s.handleSIPStatus)
 	api.HandleFunc("POST /api/sip/call", s.handleSIPCall)
 	api.HandleFunc("DELETE /api/sip/call/{callID}", s.handleSIPHangup)
+	api.HandleFunc("GET /api/stats", s.handleStats)
 	api.HandleFunc("GET /api/events", s.handleEvents)
 
 	mux.Handle("/api/", s.authMiddleware(api))
@@ -505,4 +506,67 @@ func (s *server) handleSIPHangup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	totalSessions := 0
+	connectedSessions := 0
+	for _, info := range s.sessions.infos() {
+		totalSessions++
+		if info.State == "open" {
+			connectedSessions++
+		}
+	}
+
+	var totalRecordings int64
+	var totalDurationMs int64
+	var totalFileSize int64
+	_ = s.sessions.recordingStore.db.QueryRowContext(ctx,
+		`SELECT COUNT(*), COALESCE(SUM(duration), 0), COALESCE(SUM(file_size), 0) FROM recordings`,
+	).Scan(&totalRecordings, &totalDurationMs, &totalFileSize)
+
+	var totalWebhooks int
+	_ = s.sessions.recordingStore.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM webhook_configs`,
+	).Scan(&totalWebhooks)
+
+	var delivered int
+	var failed int
+	_ = s.sessions.recordingStore.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM webhook_deliveries WHERE status = 'delivered'`,
+	).Scan(&delivered)
+	_ = s.sessions.recordingStore.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM webhook_deliveries WHERE status = 'failed'`,
+	).Scan(&failed)
+
+	activeCalls := 0
+	s.sessions.broker.mu.RLock()
+	for _, c := range s.sessions.broker.calls {
+		if c.Status != StatusEnded {
+			activeCalls++
+		}
+	}
+	s.sessions.broker.mu.RUnlock()
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sessions": map[string]any{
+			"total":     totalSessions,
+			"connected": connectedSessions,
+		},
+		"calls": map[string]any{
+			"active": activeCalls,
+		},
+		"recordings": map[string]any{
+			"total":       totalRecordings,
+			"duration_ms": totalDurationMs,
+			"size_bytes":  totalFileSize,
+		},
+		"webhooks": map[string]any{
+			"configs":   totalWebhooks,
+			"delivered": delivered,
+			"failed":    failed,
+		},
+	})
 }
