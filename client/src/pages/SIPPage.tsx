@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useI18n } from "@/lib/i18n";
+import { apiGet, apiPost, apiDelete } from "@/lib/api";
 
 interface SIPStatus {
   enabled: boolean;
@@ -28,10 +29,7 @@ export const SIPPage = () => {
   const [loading, setLoading] = useState(true);
 
   const load = () => {
-    fetch("/api/sip/status", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    })
-      .then((r) => r.json())
+    apiGet<SIPStatus>("/api/sip/status")
       .then(setStatus)
       .catch(() => setStatus({ enabled: false }))
       .finally(() => setLoading(false));
@@ -42,15 +40,7 @@ export const SIPPage = () => {
   const call = async () => {
     if (!peerURI) return;
     try {
-      const r = await fetch("/api/sip/call", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-        body: JSON.stringify({ peer_uri: peerURI }),
-      });
-      if (!r.ok) throw new Error((await r.json()).error);
+      await apiPost<{ call_id: string }>("/api/sip/call", { peer_uri: peerURI });
       toast.success("SIP call initiated");
       setPeerURI("");
       load();
@@ -61,11 +51,7 @@ export const SIPPage = () => {
 
   const hangup = async (callID: string) => {
     try {
-      const r = await fetch(`/api/sip/call/${callID}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-      });
-      if (!r.ok) throw new Error("hangup failed");
+      await apiDelete(`/api/sip/call/${callID}`);
       toast.success("Call ended");
       load();
     } catch (e) {

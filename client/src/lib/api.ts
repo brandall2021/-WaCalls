@@ -1,5 +1,13 @@
 import { getAuthToken } from "@/stores/auth";
 
+const TOKEN_KEY = "wacalls.token";
+
+let onUnauthorized: (() => void) | null = null;
+
+export const setOnUnauthorized = (fn: () => void) => {
+  onUnauthorized = fn;
+};
+
 const baseHeaders = (): HeadersInit => {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -11,11 +19,15 @@ const baseHeaders = (): HeadersInit => {
   return headers;
 };
 
+const handle401 = () => {
+  localStorage.removeItem(TOKEN_KEY);
+  if (onUnauthorized) onUnauthorized();
+};
+
 export const apiGet = async <T>(path: string): Promise<T> => {
   const r = await fetch(path, { headers: baseHeaders() });
   if (r.status === 401) {
-    localStorage.removeItem("wacalls.token");
-    window.location.reload();
+    handle401();
     throw new Error("unauthorized");
   }
   if (!r.ok) throw new Error(`${path} ${r.status}`);
@@ -25,8 +37,7 @@ export const apiGet = async <T>(path: string): Promise<T> => {
 export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
   const r = await fetch(path, { method: "POST", headers: baseHeaders(), body: JSON.stringify(body) });
   if (r.status === 401) {
-    localStorage.removeItem("wacalls.token");
-    window.location.reload();
+    handle401();
     throw new Error("unauthorized");
   }
   if (!r.ok) {
@@ -39,8 +50,7 @@ export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
 export const apiDelete = async (path: string): Promise<void> => {
   const r = await fetch(path, { method: "DELETE", headers: baseHeaders() });
   if (r.status === 401) {
-    localStorage.removeItem("wacalls.token");
-    window.location.reload();
+    handle401();
     throw new Error("unauthorized");
   }
   if (!r.ok) throw new Error(`${path} ${r.status}`);

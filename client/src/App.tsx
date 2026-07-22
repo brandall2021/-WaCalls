@@ -20,6 +20,7 @@ import { ensureSessionsWired, useSessions } from "@/stores/sessions";
 import { ensureCallsWired } from "@/stores/calls";
 import { useTheme } from "@/stores/theme";
 import { useAuth } from "@/stores/auth";
+import { setOnUnauthorized } from "@/lib/api";
 import { useI18n, type Locale } from "@/lib/i18n";
 
 const locales: Locale[] = ["en", "es", "pt"];
@@ -33,6 +34,7 @@ export const App = () => {
   const [page, setPage] = useState<PageId>("calls");
 
   useEffect(() => {
+    setOnUnauthorized(() => useAuth.getState().logout());
     checkAuth();
   }, []);
 
