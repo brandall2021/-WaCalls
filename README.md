@@ -256,9 +256,19 @@ compilación simple lo incluye. Sin build tags, sin `CGO_ENABLED`, sin DLLs.
 ### Primer uso
 
 1. Abrí `http://localhost:8080`
-2. **Registrate** con email y contraseña
+2. Iniciá sesión con una de las cuentas de ejemplo (se crean automáticamente al primer arranque):
+
+| Email | Password | Nombre |
+|---|---|---|
+| `admin@wacalls.com` | `admin123` | Administrador |
+| `operador@wacalls.com` | `operador123` | Operador |
+| `demo@wacalls.com` | `demo123` | Demo |
+
 3. Creá una sesión de WhatsApp y escaneá el QR
 4. ¡Listo para llamadas!
+
+> **Nota:** Las cuentas de ejemplo solo se crean si la tabla `users` está vacía.
+> Podés registrar usuarios adicionales desde la aplicación.
 
 ### Cliente React en modo desarrollo
 
