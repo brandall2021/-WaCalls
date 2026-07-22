@@ -112,13 +112,16 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 	cm.OnPeerAudio = func(pcm16 []float32) {
 		ac, ok := s.reg.get(callID)
 		if !ok {
+			s.log.Warn("OnPeerAudio: call not in registry", "call_id", callID)
 			return
 		}
 		if ac.recorder != nil {
 			ac.recorder.WritePCM(pcm16)
 		}
 		if ac.bridge != nil {
-			_ = ac.bridge.WritePCM(pcm16)
+			if err := ac.bridge.WritePCM(pcm16); err != nil {
+				s.log.Warn("OnPeerAudio: bridge.WritePCM failed", "call_id", callID, "err", err)
+			}
 		} else {
 			s.log.Warn("OnPeerAudio: bridge is nil, audio dropped", "call_id", callID)
 		}

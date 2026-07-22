@@ -18,9 +18,9 @@ func (s *server) routes() http.Handler {
 
 	mux.HandleFunc("POST /api/auth/register", s.handleRegister)
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
-	mux.HandleFunc("GET /api/auth/me", s.handleMe)
 
 	api := http.NewServeMux()
+	api.HandleFunc("GET /api/auth/me", s.handleMe)
 	api.HandleFunc("GET /api/sessions", s.handleSessionList)
 	api.HandleFunc("POST /api/sessions", s.handleSessionCreate)
 	api.HandleFunc("DELETE /api/sessions/{sid}", s.handleSessionDelete)

@@ -23,12 +23,21 @@ var _ RelayTransport = (*transport.SctpRelayManager)(nil)
 func (m *CallManager) onRelayConnected() {
 	m.mu.Lock()
 	call := m.currentCall
-	if call != nil && call.StateData.State == core.CallStateConnecting {
+	if call == nil {
+		m.mu.Unlock()
+		return
+	}
+	m.log.Info("onRelayConnected fired", "call_id", call.CallID, "state", string(call.StateData.State))
+	if call.StateData.State == core.CallStateConnecting {
 		if err := call.ApplyTransition(Transition{Type: TransitionMediaConnected}); err == nil {
 			m.emitState()
 			m.startSilenceKeepaliveLocked()
 			m.log.Info("relay connected → active", "call_id", call.CallID)
+		} else {
+			m.log.Warn("relay connected but transition failed", "call_id", call.CallID, "err", err)
 		}
+	} else {
+		m.log.Warn("onRelayConnected: call state is not connecting", "call_id", call.CallID, "state", string(call.StateData.State))
 	}
 	m.mu.Unlock()
 }
@@ -64,7 +73,7 @@ func buildRelayConfigs(endpoints []core.RelayEndpoint) []transport.RelayConfig {
 func (m *CallManager) connectRelays(endpoints []core.RelayEndpoint) {
 	relays := buildRelayConfigs(endpoints)
 	if len(relays) == 0 {
-		m.log.Error("no usable relay configs")
+		m.log.Error("no usable relay configs", "endpoints", len(endpoints))
 		return
 	}
 	m.mu.Lock()
@@ -72,7 +81,7 @@ func (m *CallManager) connectRelays(endpoints []core.RelayEndpoint) {
 	m.relay.SetSubscriptionSsrc(firstSsrc(m.peerSsrcs))
 	m.mu.Unlock()
 	m.relay.ConfigureRelays(relays)
-	m.log.Info("relay configured", "connected", m.relay.ConnectedCount())
+	m.log.Info("relay configured", "configs", len(relays), "connected", m.relay.ConnectedCount())
 }
 
 func (m *CallManager) cleanupMedia() {

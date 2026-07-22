@@ -161,6 +161,9 @@ func (m *CallManager) onRelayData(data []byte) {
 		return
 	}
 	if !transport.IsRtpPacket(data) {
+		if m.totalRelayRecv == 0 {
+			m.log.Warn("onRelayData: non-RTP packet received", "len", len(data), "first_byte", data[0])
+		}
 		return
 	}
 	if len(data) < 12 {
@@ -173,7 +176,17 @@ func (m *CallManager) onRelayData(data []byte) {
 
 	m.mu.Lock()
 	m.totalRelayRecv++
+	if m.totalRelayRecv == 1 {
+		m.log.Info("onRelayData: first RTP packet from relay", "len", len(data), "pt", pt,
+			"ssrc", uint32(data[8])<<24|uint32(data[9])<<16|uint32(data[10])<<8|uint32(data[11]),
+			"self_ssrc", m.selfSsrc, "peer_ssrcs", m.peerSsrcs,
+			"srtp_ok", m.srtpSession != nil, "codec_ok", m.codec != nil)
+	}
 	if m.srtpSession == nil || m.codec == nil {
+		if m.totalRelayRecv <= 3 {
+			m.log.Warn("onRelayData: dropping packet, srtp or codec nil",
+				"srtp_nil", m.srtpSession == nil, "codec_nil", m.codec == nil)
+		}
 		m.mu.Unlock()
 		return
 	}
@@ -188,6 +201,7 @@ func (m *CallManager) onRelayData(data []byte) {
 			m.peerSsrcs = []uint32{ssrc}
 			m.relay.SetSubscriptionSsrc(ssrc)
 			go m.relay.ResendSubscriptions()
+			m.log.Info("onRelayData: updated peer SSRC", "new_ssrc", ssrc)
 		}
 	}
 	srtp := m.srtpSession
@@ -196,7 +210,9 @@ func (m *CallManager) onRelayData(data []byte) {
 
 	pkt, err := srtp.Unprotect(data)
 	if err != nil {
-		m.log.Debug("srtp unprotect error", "err", err)
+		if m.totalRelayRecv <= 5 {
+			m.log.Warn("srtp unprotect error", "err", err, "pkt_len", len(data), "total_recv", m.totalRelayRecv)
+		}
 		return
 	}
 	if len(pkt.Payload) == 0 {
@@ -204,10 +220,15 @@ func (m *CallManager) onRelayData(data []byte) {
 	}
 	pcm, err := codec.Decode(pkt.Payload)
 	if err != nil {
+		if m.totalRelayRecv <= 5 {
+			m.log.Warn("opus decode error", "err", err)
+		}
 		return
 	}
 	pcm = media.NormalizeFrame(pcm, codec.FrameSize())
 	if m.OnPeerAudio != nil {
 		m.OnPeerAudio(pcm)
+	} else if m.totalRelayRecv <= 3 {
+		m.log.Warn("onRelayData: OnPeerAudio is nil, audio dropped")
 	}
 }

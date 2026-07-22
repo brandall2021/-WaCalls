@@ -107,6 +107,9 @@ func NewBridge(offerSDP string, log *slog.Logger) (*Bridge, string, error) {
 func (b *Bridge) WritePCM(pcm []float32) error {
 	dc := b.dc.Load()
 	if dc == nil || len(pcm) == 0 {
+		if dc == nil {
+			b.log.Debug("WritePCM: data channel nil, dropping audio", "samples", len(pcm))
+		}
 		return nil
 	}
 	return dc.Send(media.PCMFloat32ToInt16LE(pcm))
