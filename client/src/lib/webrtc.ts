@@ -45,7 +45,10 @@ export const openCall = async (
   pc.onconnectionstatechange = () => console.log(`[WEBRTC] PC state: ${pc.connectionState}`);
   pc.onicecandidate = (e) => { if (e.candidate) console.log(`[WEBRTC] ICE candidate: ${e.candidate.candidate.substring(0, 80)}...`); };
 
-  const dc = pc.createDataChannel(PCM_CHANNEL_LABEL, { ordered: true });
+  const dc = pc.createDataChannel(PCM_CHANNEL_LABEL, {
+    ordered: true,
+    bufferedAmountLowThreshold: 16 * 1024,
+  });
   dc.binaryType = "arraybuffer";
   dc.onopen = () => console.log(`[WEBRTC] DataChannel OPEN`);
   dc.onclose = () => console.log(`[WEBRTC] DataChannel CLOSED`);
@@ -62,13 +65,18 @@ export const openCall = async (
   let buffer: ArrayBuffer | null = null;
   let canSend = true;
   let sentCount = 0;
+  let dropCount = 0;
 
   const sendBuffer = () => {
-    if (!canSend || !buffer || dc.readyState !== "open") return;
+    if (!buffer || dc.readyState !== "open") return;
     if (dc.bufferedAmount > 64 * 1024) {
-      canSend = false;
+      if (canSend) {
+        canSend = false;
+        console.warn(`[WEBRTC] DataChannel backpressure: bufferedAmount=${dc.bufferedAmount}, pausing send`);
+      }
       return;
     }
+    canSend = true;
     dc.send(buffer);
     buffer = null;
     sentCount++;
@@ -77,12 +85,25 @@ export const openCall = async (
 
   dc.onbufferedamountlow = () => {
     canSend = true;
+    if (sentCount > 0 && sentCount % 500 !== 0) {
+      console.log(`[WEBRTC] DataChannel backpressure released: bufferedAmount=${dc.bufferedAmount}, sent=${sentCount}`);
+    }
     sendBuffer();
   };
+
+  // Periodic diagnostic: detect stalls
+  const diagInterval = setInterval(() => {
+    if (dc.readyState !== "open") {
+      clearInterval(diagInterval);
+      return;
+    }
+    console.log(`[WEBRTC] DIAG: dc.readyState=${dc.readyState} bufferedAmount=${dc.bufferedAmount} sent=${sentCount} dropped=${dropCount} canSend=${canSend}`);
+  }, 5000);
 
   captureNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
     buffer = float32ToInt16LE(e.data);
     sendBuffer();
+    if (!canSend) dropCount++;
   };
   micSource.connect(captureNode);
 
@@ -135,6 +156,7 @@ export const openCall = async (
     remoteStream: streamDest.stream,
     close: () => {
       console.log(`[WEBRTC] close() called for callId=${callId}`);
+      clearInterval(diagInterval);
       try {
         micStream.getTracks().forEach((t) => t.stop());
       } catch {}

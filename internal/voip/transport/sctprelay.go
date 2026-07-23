@@ -276,12 +276,15 @@ func (m *SctpRelayManager) sendStunRegistration(conn *relayConnection) {
 		if conn.state != relayStateOpen || conn.channel == nil {
 			return
 		}
+		if m.audioSsrc == 0 {
+			return
+		}
+
+		// Use subscription SSRC if known, otherwise use audioSsrc as the subscription
+		// hint (the relay may still forward all traffic if it doesn't match).
 		ssrc := m.subscriptionSsrc
 		if ssrc == 0 {
 			ssrc = m.audioSsrc
-		}
-		if ssrc == 0 {
-			return
 		}
 		subs := BuildSenderSubscriptions(ssrc)
 
@@ -296,8 +299,10 @@ func (m *SctpRelayManager) sendStunRegistration(conn *relayConnection) {
 		m.sendRaw(conn, BuildBindingRequestWithSubs(nil, nil, subs, false, false))
 
 		if len(info.RawToken) > 0 {
+			// Only include peer SSRCs in the allocation if we know the real peer SSRC.
+			// Using a speculative SSRC here may cause the relay to not forward audio.
 			var peerSsrcs []uint32
-			if m.subscriptionSsrc != 0 {
+			if m.subscriptionSsrc != 0 && m.subscriptionSsrc != m.audioSsrc {
 				peerSsrcs = []uint32{m.subscriptionSsrc}
 			}
 			sPid, pPid := 0, 0
@@ -311,7 +316,8 @@ func (m *SctpRelayManager) sendStunRegistration(conn *relayConnection) {
 			m.sendRaw(conn, BuildAllocateForRelay(info.RawToken, ssrcList, hmacKey, info.IP, info.Port))
 			m.log.Info("sendStunRegistration: allocate+subscription sent", "id", conn.id,
 				"audio_ssrc", m.audioSsrc, "subscription_ssrc", m.subscriptionSsrc,
-				"self_pid", sPid, "peer_pid", pPid, "raw_token", len(info.RawToken))
+				"self_pid", sPid, "peer_pid", pPid, "raw_token", len(info.RawToken),
+				"peer_ssrcs_in_alloc", len(peerSsrcs))
 		} else {
 			m.log.Info("sendStunRegistration: STUN subscription sent (no raw token for allocate)", "id", conn.id,
 				"audio_ssrc", m.audioSsrc, "subscription_ssrc", m.subscriptionSsrc)

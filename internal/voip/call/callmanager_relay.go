@@ -35,6 +35,9 @@ func (m *CallManager) onRelayConnected() {
 	case core.CallStateConnecting:
 		if err := call.ApplyTransition(Transition{Type: TransitionMediaConnected}); err == nil {
 			m.emitState()
+			// Send an initial audio frame immediately to signal readiness to WhatsApp's relay.
+			// The relay may need to see outgoing audio before it starts forwarding incoming audio.
+			m.sendInitialAudioFrameLocked()
 			m.startSilenceKeepaliveLocked()
 			m.log.Info("relay connected → active", "call_id", call.CallID)
 		} else {
@@ -84,10 +87,19 @@ func (m *CallManager) connectRelays(endpoints []core.RelayEndpoint) {
 	}
 	m.mu.Lock()
 	m.relay.SetSsrc(m.selfSsrc)
-	m.relay.SetSubscriptionSsrc(firstSsrc(m.peerSsrcs))
+	// Don't use the speculative peer SSRC for the subscription — WhatsApp uses
+	// its own SSRCs which we can only learn from the first received RTP packet.
+	// Set subscriptionSsrc=0 so the relay sends with our audioSsrc only, and
+	// onRelayData will update the subscription once it sees the real peer SSRC.
+	if m.actualPeerSet {
+		m.relay.SetSubscriptionSsrc(firstSsrc(m.peerSsrcs))
+	} else {
+		m.relay.SetSubscriptionSsrc(0)
+	}
 	m.mu.Unlock()
 	m.relay.ConfigureRelays(relays)
-	m.log.Info("relay configured", "configs", len(relays), "connected", m.relay.ConnectedCount())
+	m.log.Info("relay configured", "configs", len(relays), "connected", m.relay.ConnectedCount(),
+		"actual_peer_set", m.actualPeerSet, "peer_ssrcs", m.peerSsrcs)
 }
 
 func (m *CallManager) cleanupMedia() {

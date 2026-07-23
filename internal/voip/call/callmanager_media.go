@@ -26,16 +26,25 @@ func (m *CallManager) FeedCapturedPCM(data []float32) {
 
 	m.totalPCMRecv += len(data)
 
+	if m.totalPCMRecv == len(data) || m.totalPCMRecv%16000 == 0 {
+		m.log.Info("FeedCapturedPCM: received", "samples", len(data), "total", m.totalPCMRecv,
+			"codec_ok", m.codec != nil, "rtp_ok", m.rtpSession != nil,
+			"srtp_ok", m.srtpSession != nil, "relay_ok", m.relay.HasConnection())
+	}
+
 	if m.codec == nil {
-		m.log.Debug("FeedCapturedPCM: codec nil, dropping", "samples", len(data))
+		if m.totalPCMRecv <= 1600 {
+			m.log.Debug("FeedCapturedPCM: codec nil, dropping", "samples", len(data))
+		}
 		return
 	}
 	if m.rtpSession == nil {
-		m.log.Debug("FeedCapturedPCM: rtpSession nil, dropping", "samples", len(data))
+		if m.totalPCMRecv <= 1600 {
+			m.log.Debug("FeedCapturedPCM: rtpSession nil, dropping", "samples", len(data))
+		}
 		return
 	}
 	if m.srtpSession == nil {
-		// Buffer audio while SRTP keys are being derived
 		if m.pendingPCM == nil {
 			m.pendingPCM = make([]float32, 0, 32000)
 		}
@@ -47,7 +56,6 @@ func (m *CallManager) FeedCapturedPCM(data []float32) {
 		return
 	}
 	if !m.relay.HasConnection() {
-		// Buffer audio while relay connects (max 2 seconds @ 16kHz = 32000 samples)
 		if m.pendingPCM == nil {
 			m.pendingPCM = make([]float32, 0, 32000)
 		}
@@ -102,6 +110,9 @@ func (m *CallManager) feedPCMInternal(data []float32) {
 
 func (m *CallManager) sendOpusFrameLocked(opus []byte) {
 	if m.rtpSession == nil || m.srtpSession == nil {
+		if m.totalFramesSent == 0 {
+			m.log.Debug("sendOpusFrameLocked: rtp or srtp nil", "rtp_nil", m.rtpSession == nil, "srtp_nil", m.srtpSession == nil)
+		}
 		return
 	}
 	marker := !m.firstPacketSent
@@ -115,12 +126,19 @@ func (m *CallManager) sendOpusFrameLocked(opus []byte) {
 	m.totalFramesSent++
 
 	if m.totalFramesSent%100 == 1 {
-		m.log.Info("audio frame sent", "frames", m.totalFramesSent, "pcm_recv", m.totalPCMRecv)
+		m.log.Info("audio frame sent", "frames", m.totalFramesSent, "pcm_recv", m.totalPCMRecv,
+			"relay_connected", m.relay.HasConnection())
 	}
 
 	srtp, err := m.srtpSession.Protect(pkt)
 	if err != nil {
-		m.log.Debug("srtp protect error", "err", err)
+		m.log.Warn("srtp protect error", "err", err, "frame", m.totalFramesSent)
+		return
+	}
+	if !m.relay.HasConnection() {
+		if m.totalFramesSent <= 3 {
+			m.log.Warn("sendOpusFrameLocked: relay not connected, SRTP packet dropped", "frame", m.totalFramesSent)
+		}
 		return
 	}
 	m.relay.Broadcast(srtp)
@@ -156,6 +174,20 @@ func (m *CallManager) startSilenceKeepaliveLocked() {
 	}()
 }
 
+// sendInitialAudioFrameLocked sends a single silence frame immediately when the
+// relay connects. This signals to WhatsApp's relay that we are ready to send and
+// may prompt it to start forwarding incoming audio from the peer.
+func (m *CallManager) sendInitialAudioFrameLocked() {
+	if m.codec == nil || m.rtpSession == nil || m.srtpSession == nil || !m.relay.HasConnection() {
+		return
+	}
+	silence := make([]float32, m.codec.FrameSize())
+	if opus, err := m.codec.Encode(silence); err == nil {
+		m.sendOpusFrameLocked(opus)
+		m.log.Info("sendInitialAudioFrameLocked: sent initial silence frame", "frame", m.totalFramesSent)
+	}
+}
+
 func (m *CallManager) onRelayData(data []byte) {
 	if transport.IsStunPacket(data) {
 		if m.totalRelayRecv == 0 && m.totalFramesSent == 0 {
@@ -165,7 +197,8 @@ func (m *CallManager) onRelayData(data []byte) {
 	}
 	if !transport.IsRtpPacket(data) {
 		if m.totalRelayRecv == 0 {
-			m.log.Warn("onRelayData: non-RTP packet received", "len", len(data), "first_byte", data[0])
+			classified := transport.ClassifyPacket(data)
+			m.log.Warn("onRelayData: non-RTP packet received", "len", len(data), "first_byte", data[0], "classified", classified)
 		}
 		return
 	}
@@ -179,12 +212,17 @@ func (m *CallManager) onRelayData(data []byte) {
 
 	m.mu.Lock()
 	m.totalRelayRecv++
-	if m.totalRelayRecv == 1 {
-		m.log.Info("onRelayData: first RTP packet from relay", "len", len(data), "pt", pt,
-			"ssrc", uint32(data[8])<<24|uint32(data[9])<<16|uint32(data[10])<<8|uint32(data[11]),
+	ssrc := uint32(data[8])<<24 | uint32(data[9])<<16 | uint32(data[10])<<8 | uint32(data[11])
+
+	if m.totalRelayRecv <= 3 || m.totalRelayRecv%500 == 0 {
+		m.log.Info("onRelayData: RTP packet from relay", "len", len(data), "pt", pt,
+			"ssrc", ssrc, "seq", uint16(data[2])<<8|uint32(data[3]),
 			"self_ssrc", m.selfSsrc, "peer_ssrcs", m.peerSsrcs,
-			"srtp_ok", m.srtpSession != nil, "codec_ok", m.codec != nil)
+			"total_recv", m.totalRelayRecv, "total_sent", m.totalFramesSent,
+			"srtp_ok", m.srtpSession != nil, "codec_ok", m.codec != nil,
+			"actual_peer_set", m.actualPeerSet)
 	}
+
 	if m.srtpSession == nil || m.codec == nil {
 		if m.totalRelayRecv <= 3 {
 			m.log.Warn("onRelayData: dropping packet, srtp or codec nil",
@@ -193,18 +231,29 @@ func (m *CallManager) onRelayData(data []byte) {
 		m.mu.Unlock()
 		return
 	}
-	ssrc := uint32(data[8])<<24 | uint32(data[9])<<16 | uint32(data[10])<<8 | uint32(data[11])
+
+	// Ignore our own audio (loopback)
 	if ssrc == m.selfSsrc {
 		m.mu.Unlock()
 		return
 	}
+
+	// Learn the actual peer SSRC from the first received RTP packet.
+	// WhatsApp uses its own SSRCs (not the speculative ones we compute from JIDs),
+	// so we must update the subscription once we see the real SSRC.
 	if !m.actualPeerSet {
 		m.actualPeerSet = true
 		if !containsSsrc(m.peerSsrcs, ssrc) {
 			m.peerSsrcs = []uint32{ssrc}
 			m.relay.SetSubscriptionSsrc(ssrc)
 			go m.relay.ResendSubscriptions()
-			m.log.Info("onRelayData: updated peer SSRC", "new_ssrc", ssrc)
+			m.log.Info("onRelayData: LEARNED actual peer SSRC from RTP, subscription updated",
+				"new_peer_ssrc", ssrc, "self_ssrc", m.selfSsrc)
+		} else {
+			m.log.Info("onRelayData: first RTP SSRC matches expected peer SSRC", "ssrc", ssrc)
+			// Still resend to ensure subscription is using the confirmed SSRC
+			m.relay.SetSubscriptionSsrc(ssrc)
+			go m.relay.ResendSubscriptions()
 		}
 	}
 	srtp := m.srtpSession
