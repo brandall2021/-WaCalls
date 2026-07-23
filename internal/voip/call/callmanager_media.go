@@ -216,7 +216,7 @@ func (m *CallManager) onRelayData(data []byte) {
 
 	if m.totalRelayRecv <= 3 || m.totalRelayRecv%500 == 0 {
 		m.log.Info("onRelayData: RTP packet from relay", "len", len(data), "pt", pt,
-			"ssrc", ssrc, "seq", uint16(data[2])<<8|uint32(data[3]),
+			"ssrc", ssrc, "seq", uint16(data[2])<<8|uint16(data[3]),
 			"self_ssrc", m.selfSsrc, "peer_ssrcs", m.peerSsrcs,
 			"total_recv", m.totalRelayRecv, "total_sent", m.totalFramesSent,
 			"srtp_ok", m.srtpSession != nil, "codec_ok", m.codec != nil,
