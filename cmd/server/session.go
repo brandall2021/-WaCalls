@@ -126,7 +126,7 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 			s.log.Warn("OnPeerAudio: bridge is nil, audio dropped", "call_id", callID)
 		}
 	}
-	cm.onOfferFailed = func(cid string) {
+	cm.OnOfferFailed = func(cid string) {
 		s.log.Warn("onOfferFailed: cleaning up call that never received ack", "call_id", cid)
 		s.removeCall(cid)
 	}

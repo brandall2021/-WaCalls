@@ -51,7 +51,7 @@ type CallManager struct {
 	OnIncoming    func(*CallInfo)
 	OnEnded       func(*CallInfo)
 	OnPeerAudio   func([]float32)
-	onOfferFailed func(callID string)
+	OnOfferFailed func(callID string)
 }
 
 func NewCallManager(sock core.VoipSocket, log *slog.Logger) *CallManager {
@@ -129,8 +129,8 @@ func (m *CallManager) StartCall(ctx context.Context, callID string, peerJid type
 			m.log.Error("call offer query failed (background)", "call_id", callID, "err", err)
 			// Signal the caller to clean up the registry entry.
 			m.mu.Lock()
-			if m.onOfferFailed != nil {
-				m.onOfferFailed(callID)
+			if m.OnOfferFailed != nil {
+				m.OnOfferFailed(callID)
 			}
 			m.mu.Unlock()
 			return
