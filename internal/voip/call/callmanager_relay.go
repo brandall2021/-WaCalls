@@ -32,17 +32,21 @@ func (m *CallManager) onRelayConnected() {
 		"relay_connected", m.relay.HasConnection(), "connected_count", m.relay.ConnectedCount())
 
 	switch call.StateData.State {
-	case core.CallStateConnecting:
-		if err := call.ApplyTransition(Transition{Type: TransitionMediaConnected}); err == nil {
+	case core.CallStateConnecting, core.CallStateInitiating:
+		if call.StateData.State == core.CallStateConnecting {
+			// Only transition to MediaConnected if we were in Connecting state
+			if err := call.ApplyTransition(Transition{Type: TransitionMediaConnected}); err != nil {
+				m.log.Warn("relay connected but transition failed", "call_id", call.CallID, "err", err)
+				m.mu.Unlock()
+				return
+			}
 			m.emitState()
-			// Send an initial audio frame immediately to signal readiness to WhatsApp's relay.
-			// The relay may need to see outgoing audio before it starts forwarding incoming audio.
-			m.sendInitialAudioFrameLocked()
-			m.startSilenceKeepaliveLocked()
-			m.log.Info("relay connected → active", "call_id", call.CallID)
-		} else {
-			m.log.Warn("relay connected but transition failed", "call_id", call.CallID, "err", err)
 		}
+		// Send an initial audio frame immediately to signal readiness to WhatsApp's relay.
+		// The relay may need to see outgoing audio before it starts forwarding incoming audio.
+		m.sendInitialAudioFrameLocked()
+		m.startSilenceKeepaliveLocked()
+		m.log.Info("relay connected → ready", "call_id", call.CallID, "state", string(call.StateData.State))
 	case core.CallStateRinging, core.CallStateIncomingRinging:
 		m.log.Info("onRelayConnected: relay ready during ringing, waiting for accept", "call_id", call.CallID)
 	default:

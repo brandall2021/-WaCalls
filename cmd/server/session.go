@@ -126,14 +126,42 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 			s.log.Warn("OnPeerAudio: bridge is nil, audio dropped", "call_id", callID)
 		}
 	}
+	cm.onOfferFailed = func(cid string) {
+		s.log.Warn("onOfferFailed: cleaning up call that never received ack", "call_id", cid)
+		s.removeCall(cid)
+	}
 }
 
 func (s *Session) startOutgoing(ctx context.Context, peer types.JID, isVideo bool) (string, error) {
 	callID := signaling.GenerateCallID()
 	cm := s.createCall(callID)
 	if err := cm.StartCall(ctx, callID, peer, isVideo); err != nil {
+		// StartCall only fails synchronously for "call already in progress" or
+		// build-offer errors. In both cases the call was never fully created.
 		s.removeCall(callID)
 		return "", err
+	}
+	// StartCall returns immediately (offer sent async). A fallback stale timer
+	// covers the case where WhatsApp never acks and onOfferFailed is never called.
+	ac, ok := s.reg.get(callID)
+	if ok {
+		ac.staleTimer = time.AfterFunc(60*time.Second, func() {
+			ac, still := s.reg.get(callID)
+			if !still {
+				return
+			}
+			state := ac.cm.CurrentCall()
+			if state == nil || state.IsEnded() {
+				return
+			}
+			// Only clean up if the call never progressed past initial setup
+			if state.StateData.State == core.CallStateInitiating || state.StateData.State == core.CallStateRinging {
+				s.log.Warn("stale outgoing call: never progressed, cleaning up",
+					"call_id", callID, "state", string(state.StateData.State))
+				s.removeCall(callID)
+				_ = ac.cm.EndCall(context.Background(), core.EndCallReasonUserEnded)
+			}
+		})
 	}
 	return callID, nil
 }
@@ -362,7 +390,7 @@ func (s *Session) startRecording(callID, peer, direction string) {
 	ac.recordingPath = filePath
 	ac.recordingID = newSessionID()
 	ac.staleTimer = time.AfterFunc(60*time.Minute, func() {
-		if a, ok := s.reg.get(callID); ok && a.recorder != nil {
+		if _, ok := s.reg.get(callID); ok {
 			s.log.Warn("stale call detected, force ending", "call_id", callID)
 			s.stopRecording(callID)
 			s.removeCall(callID)

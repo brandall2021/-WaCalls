@@ -117,6 +117,12 @@ func (m *CallManager) HandleCallAccept(ctx context.Context, node *waBinary.Node,
 	}
 
 	m.mu.Lock()
+	// Handle the race where accept arrives before ack is processed.
+	// If state is still Initiating, transition to Ringing first.
+	if call.StateData.State == core.CallStateInitiating {
+		m.log.Info("HandleCallAccept: accept arrived before ack, fast-tracking to Ringing", "call_id", call.CallID)
+		_ = call.ApplyTransition(Transition{Type: TransitionOfferSent})
+	}
 	_ = call.ApplyTransition(Transition{Type: TransitionRemoteAccepted})
 	m.emitState()
 	m.acceptedByJid = peerJid.String()

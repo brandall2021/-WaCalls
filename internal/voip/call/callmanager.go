@@ -51,6 +51,7 @@ type CallManager struct {
 	OnIncoming    func(*CallInfo)
 	OnEnded       func(*CallInfo)
 	OnPeerAudio   func([]float32)
+	onOfferFailed func(callID string)
 }
 
 func NewCallManager(sock core.VoipSocket, log *slog.Logger) *CallManager {
@@ -116,21 +117,36 @@ func (m *CallManager) StartCall(ctx context.Context, callID string, peerJid type
 	if err != nil {
 		return err
 	}
-	ackNode, err := m.sock.Query(ctx, offer)
-	if err != nil {
-		return err
-	}
 
-	m.mu.Lock()
-	_ = m.currentCall.ApplyTransition(Transition{Type: TransitionOfferSent})
-	m.emitState()
-	m.mu.Unlock()
+	// Send the offer and wait for ack in a background goroutine.
+	// The browser HTTP request has a short timeout (10s), but WhatsApp ack
+	// can take longer. Blocking here would cause the browser to timeout,
+	// remove the call, and leave a zombie on WhatsApp's side.
+	go func() {
+		ackCtx := context.Background()
+		ackNode, err := m.sock.Query(ackCtx, offer)
+		if err != nil {
+			m.log.Error("call offer query failed (background)", "call_id", callID, "err", err)
+			// Signal the caller to clean up the registry entry.
+			m.mu.Lock()
+			if m.onOfferFailed != nil {
+				m.onOfferFailed(callID)
+			}
+			m.mu.Unlock()
+			return
+		}
 
-	if ackNode != nil {
-		go m.HandleCallAck(context.Background(), ackNode)
-	}
+		m.mu.Lock()
+		_ = m.currentCall.ApplyTransition(Transition{Type: TransitionOfferSent})
+		m.emitState()
+		m.mu.Unlock()
 
-	m.log.Info("call offer sent", "call_id", callID, "peer", resolved.String())
+		if ackNode != nil {
+			m.HandleCallAck(context.Background(), ackNode)
+		}
+	}()
+
+	m.log.Info("call offer sent (async)", "call_id", callID, "peer", resolved.String())
 	return nil
 }
 

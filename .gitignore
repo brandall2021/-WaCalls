@@ -19,7 +19,7 @@ client/dist/
 client/.vite/
 client/*.tsbuildinfo
 node_modules/
-server
+/server
 npm-debug.log*
 yarn-error.log*
 /vendor/
