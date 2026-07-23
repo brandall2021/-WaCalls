@@ -45,10 +45,8 @@ export const openCall = async (
   pc.onconnectionstatechange = () => console.log(`[WEBRTC] PC state: ${pc.connectionState}`);
   pc.onicecandidate = (e) => { if (e.candidate) console.log(`[WEBRTC] ICE candidate: ${e.candidate.candidate.substring(0, 80)}...`); };
 
-  const dc = pc.createDataChannel(PCM_CHANNEL_LABEL, {
-    ordered: true,
-    bufferedAmountLowThreshold: 16 * 1024,
-  });
+  const dc = pc.createDataChannel(PCM_CHANNEL_LABEL, { ordered: true });
+  dc.bufferedAmountLowThreshold = 16 * 1024;
   dc.binaryType = "arraybuffer";
   dc.onopen = () => console.log(`[WEBRTC] DataChannel OPEN`);
   dc.onclose = () => console.log(`[WEBRTC] DataChannel CLOSED`);
