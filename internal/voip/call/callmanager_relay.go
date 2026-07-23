@@ -87,11 +87,11 @@ func (m *CallManager) connectRelays(endpoints []core.RelayEndpoint) {
 	}
 	m.mu.Lock()
 	m.relay.SetSsrc(m.selfSsrc)
-	// Don't use the speculative peer SSRC for the subscription — WhatsApp uses
-	// its own SSRCs which we can only learn from the first received RTP packet.
-	// Set subscriptionSsrc=0 so the relay sends with our audioSsrc only, and
-	// onRelayData will update the subscription once it sees the real peer SSRC.
-	if m.actualPeerSet {
+	// Always use the computed peer SSRCs for the subscription. HandleCallAck
+	// and HandleCallAccept compute SSRCs from actual participant JIDs, so they
+	// are accurate. Setting subscriptionSsrc=0 caused the relay allocation to
+	// omit the peer SSRC, preventing the relay from forwarding incoming audio.
+	if len(m.peerSsrcs) > 0 && m.peerSsrcs[0] != 0 {
 		m.relay.SetSubscriptionSsrc(firstSsrc(m.peerSsrcs))
 	} else {
 		m.relay.SetSubscriptionSsrc(0)

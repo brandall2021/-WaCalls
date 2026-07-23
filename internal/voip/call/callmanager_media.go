@@ -179,6 +179,9 @@ func (m *CallManager) startSilenceKeepaliveLocked() {
 // may prompt it to start forwarding incoming audio from the peer.
 func (m *CallManager) sendInitialAudioFrameLocked() {
 	if m.codec == nil || m.rtpSession == nil || m.srtpSession == nil || !m.relay.HasConnection() {
+		m.log.Warn("sendInitialAudioFrameLocked: skipped (not ready)",
+			"codec_nil", m.codec == nil, "rtp_nil", m.rtpSession == nil,
+			"srtp_nil", m.srtpSession == nil, "relay_ok", m.relay.HasConnection())
 		return
 	}
 	silence := make([]float32, m.codec.FrameSize())
